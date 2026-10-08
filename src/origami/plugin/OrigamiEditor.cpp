@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Martial Systems LLC. All rights reserved.
 
 #include "OrigamiEditor.h"
+#include "OrigamiPresets.h"
 
 using namespace origami;
 
@@ -33,4 +34,18 @@ double OrigamiEditor::stageCurve (int stage, double x) const
     double v[kParamCount];
     for (int p = 0; p < kParamCount; ++p) v[p] = proc_.value (p);
     return OrigamiCore::stageCurve (v, stage, x);
+}
+
+int OrigamiEditor::presetCount() const { return (int) factoryPresets().size(); }
+
+juce::String OrigamiEditor::presetName (int i) const
+{
+    const auto& b = factoryPresets();
+    return i >= 0 && i < (int) b.size() ? b[(size_t) i].name : juce::String();
+}
+
+juce::String OrigamiEditor::presetBank (int i) const
+{
+    const auto& b = factoryPresets();
+    return i >= 0 && i < (int) b.size() ? b[(size_t) i].bank : juce::String();
 }

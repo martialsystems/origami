@@ -16,6 +16,21 @@ ORIGAMI folds your sound three times over. Feed it a bass line, a pad or a full 
 - **Clean or cleaner.** QUALITY 1x uses antiderivative anti-aliasing with no latency. 2x adds a 93-tap halfband oversampler for very low aliasing and reports its latency to your DAW.
 - **Stereo-linked.** Left and right share every control and the detectors, so the image holds.
 - **Four pages.** MAIN, STAGES, DYNAMICS and SETUP, with input, output and follower meters and an OVER light.
+- **33 factory presets in banks.** INIT plus banks voiced for each Jidai source, picked from the preset box in the header or from your DAW's program list.
+
+## Factory presets
+
+Click the preset name in the header for a menu grouped by bank, or step with the arrows. Your DAW lists the same presets as programs, named `BANK: Name`. Presets are built into the plugin, so nothing needs installing on any platform. Every preset has LEVEL COMP on and is level-checked to stay below 0 dBFS on the test material.
+
+| Bank | Voiced for | Presets |
+| --- | --- | --- |
+| INIT | Everything at default: true bypass | INIT |
+| RONIN | RONIN's VCO and filter levels: basses and leads | Acid Grit, Acid Squelch Fold, Reese Growl, Wavefolded Bass, Lead Bite, Pluck Edge, Hard Sync-Style Lead, Sub-Safe Bass Drive |
+| SHOGUN | SHOGUN's drum levels and transients | Drum Smash, Kick Fold, Hat Sizzle, Drum-Bus Glue, Snare Crack, Transient Fold, Tom Bloom, Parallel Drum Grit |
+| BUSHIDO | VC 1–3 on their jacks, ready for BUSHIDO's CV A/B/C; sensible unpatched | Stepped Fold Sequence, Stepped Symmetry, Row C Fold Accent, Pitch-Tracked Fold, Fold Arpeggio, Gate-Opened Fold, Stepped Bite |
+| GENERIC | Any source, buses and full mixes | Warm Bus Glue, Analog Edge, Even-Order Bloom, Lopsided Fold, Self-Modulated Fold, Stereo Shimmer Fold, Sidechain Pump Fold, Full Fold, Shattered |
+
+The bank lives in `presets/factory.xml`. Each preset is a complete saved state, in the same format the plugin and the rack device save.
 
 ## Quick start
 
@@ -45,7 +60,7 @@ ctest --test-dir build --output-on-failure
 ```
 
 - **`origami`** tests the DSP core on its own. It checks true bypass, latency, stereo link, the exact emphasis inverse, level, symmetry, audio-rate VC, aliasing at 1x and 2x, and silence, NaN and denormal handling.
-- **`origami_plugin`** tests the plugin without a host. It checks the standalone input normals, latency reporting, the saved state and its round trip, and the editor's sizes and controls. Run `build/OrigamiPluginTests_artefacts/Release/OrigamiPluginTests <folder>` to also save screenshots of every page.
+- **`origami_plugin`** tests the plugin without a host. It checks the standalone input normals, latency reporting, the saved state and its round trip, the editor's sizes and controls, and every factory preset: it loads, its state round-trips byte for byte, and on a sine sweep plus drum hits (and on a bass line for RONIN or a drum loop for SHOGUN, at −1 dBFS) its output is finite, audible and below 0 dBFS. Run `build/OrigamiPluginTests_artefacts/Release/OrigamiPluginTests <folder>` to also save screenshots of every page.
 
 ## Compatibility
 
@@ -56,6 +71,7 @@ ORIGAMI follows the **Jidai Cable Standard v1.1**, the patching rules every Jida
 - **Latency.** 0 samples at 1x and 46 samples at 2x. ORIGAMI reports it to the DAW, and the rack compensates for it on every path to its output.
 - **Presets.** One saved-state format for the plugin and the rack device, so a preset loads in either one.
 - **Formats.** VST3 and Standalone, for macOS and Linux.
+- **Same numbers everywhere.** ORIGAMI's targets build with `-ffp-contract=off` on clang and gcc, so Apple silicon, Intel and Linux compute the same samples. The option `ORIGAMI_STRICT_FP` (on by default) controls it.
 
 The shared standard code lives in `third_party/jidai-common`. `VENDOR.md` there names the exact version.
 
@@ -78,7 +94,7 @@ target_link_libraries(<target> PUBLIC origami::dsp)   # #include "origami/dsp/Or
 # compile ${ORIGAMI_UI_SOURCES} into your JUCE target     # #include "origami/plugin/OrigamiPanel.h"
 ```
 
-If your project already defines `jidai::common`, ORIGAMI uses it instead of its own copy.
+If your project already defines `jidai::common`, ORIGAMI uses it instead of its own copy. To offer the factory presets, also compile `${ORIGAMI_PRESET_SOURCES}` and link `origami::factory_data`.
 
 ## Legal
 

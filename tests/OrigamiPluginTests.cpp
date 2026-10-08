@@ -1,15 +1,19 @@
 // Copyright (c) 2026 Martial Systems LLC. All rights reserved.
 // ORIGAMI plugin tests (no host, no audio device): testFxStandaloneNormals, latency reporting, state format and
-// round trip, the editor's sizes and controls. Writes PNGs of the editor and the rack panel modes when given an
+// round trip, the factory presets (load, round trip, level on a test signal), the editor's sizes and controls. Writes PNGs of the editor and the rack panel modes when given an
 // output directory:  OrigamiPluginTests [out-dir]
 
 #include "origami/plugin/OrigamiEditor.h"
+#include "origami/plugin/OrigamiPresets.h"
 #include "origami/plugin/OrigamiProcessor.h"
 #include "origami/plugin/OrigamiState.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <cmath>
 #include <cstdio>
+#include <map>
+#include <set>
 
 using namespace origami;
 
@@ -169,6 +173,34 @@ void testEditor (const juce::File& outDir)
     panel.mouseDoubleClick (mouse (panel, c, c, false));
     check (p.value (kWave) == 0.0, "double-click resets WAVE to 0 (true bypass)");
 
+    // Preset box: the menu has INIT and one submenu per bank; > and < step through the bank and wrap.
+    {
+        const auto menu = panel.presetMenu();
+        juce::StringArray tops;
+        int subItems = 0;
+        for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
+        {
+            tops.add (it.getItem().text);
+            if (auto* sub = it.getItem().subMenu.get())
+                for (juce::PopupMenu::MenuItemIterator si (*sub); si.next();) ++subItems;
+        }
+        check (tops == juce::StringArray ({ "INIT", "RONIN", "SHOGUN", "BUSHIDO", "GENERIC" }) && subItems + 1 == p.getNumPrograms(),
+               "preset menu: INIT, then RONIN, SHOGUN, BUSHIDO, GENERIC submenus holding every preset (" + tops.joinIntoString (", ") + ")");
+        const auto next = panel.presetPartCentre (OrigamiPanel::PresetPart::Next);
+        const auto prev = panel.presetPartCentre (OrigamiPanel::PresetPart::Prev);
+        panel.mouseDown (mouse (panel, next, next, false)); panel.mouseUp (mouse (panel, next, next, false));
+        const auto& first = factoryPresets()[1];
+        check (p.getCurrentProgram() == 1 && std::abs (p.value (kWave) - first.values[kWave]) < 1e-5,
+               "preset > loads the next preset (" + p.getProgramName (1) + ")");
+        if (outDir != juce::File())
+            snapshot (panel, outDir.getChildFile ("origami_standalone_preset.png"));
+        panel.mouseDown (mouse (panel, prev, prev, false)); panel.mouseUp (mouse (panel, prev, prev, false));
+        panel.mouseDown (mouse (panel, prev, prev, false)); panel.mouseUp (mouse (panel, prev, prev, false));
+        check (p.getCurrentProgram() == p.getNumPrograms() - 1, "preset < wraps from INIT to the last preset");
+        panel.mouseDown (mouse (panel, next, next, false)); panel.mouseUp (mouse (panel, next, next, false));
+        check (p.getCurrentProgram() == 0 && p.value (kWave) == 0.0, "preset > wraps back to INIT");
+    }
+
     // Jacks: 8, symmetric about the centre line, >= 16 px targets at the smallest scale.
     bool sym = true;
     for (int j = 0; j < 4; ++j)
@@ -239,6 +271,240 @@ void testEditor (const juce::File& outDir)
     }
 }
 
+// The preset test signal, 48 kHz stereo, 3.5 s: a log sine sweep 30 Hz -> 16 kHz at -6 dBFS (R at 0.8 of L),
+// then four drum-like hits (a pitch-dropping body plus a noise snap) peaking at -3 dBFS.
+juce::AudioBuffer<float> presetTestSignal()
+{
+    const double fs = 48000.0;
+    const int nSweep = 96000, nHit = 18000, n = nSweep + 4 * nHit;
+    juce::AudioBuffer<float> x (2, n);
+    const double f0 = 30.0, f1 = 16000.0, T = nSweep / fs, k = std::log (f1 / f0);
+    for (int i = 0; i < nSweep; ++i)
+    {
+        const double t = i / fs;
+        const double ph = 2.0 * juce::MathConstants<double>::pi * f0 * T / k * (std::exp (t / T * k) - 1.0);
+        const double fade = std::min (1.0, std::min (i, nSweep - 1 - i) / 480.0);
+        const double v = 0.5 * fade * std::sin (ph);
+        x.setSample (0, i, (float) v);
+        x.setSample (1, i, (float) (0.8 * v));
+    }
+    juce::Random r (2026);
+    for (int h = 0; h < 4; ++h)
+    {
+        double ph = 0.0;
+        for (int i = 0; i < nHit; ++i)
+        {
+            const double t = i / fs;
+            ph += 2.0 * juce::MathConstants<double>::pi * (45.0 + 105.0 * std::exp (-t / 0.03)) / fs;
+            const double body = 0.5 * std::exp (-t / 0.12) * std::sin (ph);
+            const double snap = 0.2 * std::exp (-t / 0.02) * (r.nextDouble() * 2.0 - 1.0);
+            const double v = juce::jlimit (-0.7079, 0.7079, body + snap);
+            x.setSample (0, nSweep + h * nHit + i, (float) v);
+            x.setSample (1, nSweep + h * nHit + i, (float) v);
+        }
+    }
+    return x;
+}
+
+// Bank signals at their sources' levels, 48 kHz stereo, peaking at -1 dBFS.
+// RONIN: a bright saw bass line (55-220 Hz), 2 s. SHOGUN: a drum loop (kick, snare, hats), 2 s.
+juce::AudioBuffer<float> bankTestSignal (const juce::String& bank)
+{
+    const double fs = 48000.0;
+    const int n = 96000;
+    juce::AudioBuffer<float> x (2, n);
+    x.clear();
+    if (bank == "RONIN")
+    {
+        const double notes[8] { 55.0, 110.0, 82.41, 55.0, 130.81, 110.0, 73.42, 220.0 };
+        double ph = 0.0;
+        for (int i = 0; i < n; ++i)
+        {
+            const int step = i / 12000, pos = i % 12000;
+            ph += notes[step % 8] / fs;
+            ph -= std::floor (ph);
+            const double env = std::min (1.0, pos / 48.0) * std::exp (-pos / 9000.0);
+            const double v = 0.891 * env * (2.0 * ph - 1.0);
+            x.setSample (0, i, (float) v);
+            x.setSample (1, i, (float) v);
+        }
+    }
+    else if (bank == "SHOGUN")
+    {
+        juce::Random r (99);
+        for (int i = 0; i < n; ++i)
+        {
+            const int pos = i % 12000, beat = (i / 12000) % 4;
+            const double t = pos / fs;
+            double v = 0.0;
+            if (beat == 0 || beat == 2) v += 0.8 * std::exp (-t / 0.15) * std::sin (2.0 * juce::MathConstants<double>::pi * (50.0 * t + 1.8 * (1.0 - std::exp (-t / 0.02))));
+            if (beat == 1 || beat == 3) v += std::exp (-t / 0.08) * (0.35 * std::sin (2.0 * juce::MathConstants<double>::pi * 190.0 * t) + 0.45 * (r.nextDouble() * 2.0 - 1.0));
+            const int hp = i % 6000;
+            v += 0.25 * std::exp (-hp / fs / 0.015) * (r.nextDouble() * 2.0 - 1.0);
+            v = juce::jlimit (-0.891, 0.891, v);
+            x.setSample (0, i, (float) v);
+            x.setSample (1, i, (float) v);
+        }
+    }
+    else
+        return {};
+    return x;
+}
+
+struct SignalResult { bool finite = true; double peakDb = -240.0, rmsDb = -240.0; };
+
+SignalResult runSignal (OrigamiProcessor& p, const juce::AudioBuffer<float>& signal)
+{
+    SignalResult res;
+    p.prepareToPlay (48000.0, 512);
+    double peak = 0.0, sum = 0.0;
+    juce::AudioBuffer<float> blk (2, 512);
+    for (int start = 0; start < signal.getNumSamples(); start += 512)
+    {
+        const int len = std::min (512, signal.getNumSamples() - start);
+        blk.clear();
+        for (int c = 0; c < 2; ++c) blk.copyFrom (c, 0, signal, c, start, len);
+        run (p, blk);
+        for (int c = 0; c < 2; ++c)
+            for (int i = 0; i < len; ++i)
+            {
+                const double v = blk.getSample (c, i);
+                res.finite = res.finite && std::isfinite (v);
+                peak = std::max (peak, std::abs (v));
+                sum += v * v;
+            }
+    }
+    const double rms = std::sqrt (sum / (2.0 * signal.getNumSamples()));
+    res.peakDb = 20.0 * std::log10 (std::max (peak, 1e-12));
+    res.rmsDb = 20.0 * std::log10 (std::max (rms, 1e-12));
+    return res;
+}
+
+bool paramsMatch (OrigamiProcessor& p, const double (&v)[kParamCount], bool exact, juce::String& why)
+{
+    for (int i = 0; i < kParamCount; ++i)
+    {
+        if (i == kBypass) continue;
+        const auto& info = paramInfo (i);
+        const double tol = exact ? 0.0 : 1e-5 * (info.max - info.min);
+        if (std::abs (p.value (i) - v[i]) > tol)
+        {
+            why = juce::String (info.id) + " " + juce::String (p.value (i), 7) + " vs " + juce::String (v[i], 7);
+            return false;
+        }
+    }
+    return true;
+}
+
+void testFactoryPresets()
+{
+    const auto& bank = factoryPresets();
+    const int count = (int) bank.size();
+    check (count >= 16 && count <= 40, "factory bank has 16..40 presets, got " + juce::String (count));
+    {
+        std::map<juce::String, int> perBank;
+        juce::StringArray order;
+        for (const auto& pr : bank) { ++perBank[pr.bank]; order.addIfNotAlreadyThere (pr.bank); }
+        bool sizes = perBank["INIT"] == 1;
+        for (auto b : { "RONIN", "SHOGUN", "BUSHIDO", "GENERIC" }) sizes = sizes && perBank[b] >= 6 && perBank[b] <= 9;
+        check (order == juce::StringArray ({ "INIT", "RONIN", "SHOGUN", "BUSHIDO", "GENERIC" }) && sizes,
+               "banks in order INIT, RONIN, SHOGUN, BUSHIDO, GENERIC with 6..9 presets each (" + order.joinIntoString (", ") + ")");
+        check (count > 1 && bank[1].displayName() == bank[1].bank + ": " + bank[1].name && bank[0].displayName() == "INIT",
+               "program names are BANK: Name (INIT alone)");
+    }
+    check (count > 0 && bank[0].name == "INIT", "the first factory preset is INIT");
+    bool initIsDefault = count > 0;
+    for (int i = 0; i < kParamCount && count > 0; ++i)
+        initIsDefault = initIsDefault && bank[0].values[i] == paramInfo (i).def;
+    check (initIsDefault, "INIT is exactly the parameter defaults");
+
+    // The embedded XML: every PRESET parses, holds every param id once, and no name carries a digit.
+    juce::StringArray errors;
+    auto xml = juce::parseXML (factoryBankXmlText());
+    check (xml != nullptr && (int) parseFactoryBank (*xml, &errors).size() == count && errors.isEmpty(),
+           "the embedded bank parses with no skipped presets " + errors.joinIntoString ("; "));
+    std::set<juce::String> names;
+    if (xml != nullptr)
+        for (auto* e : xml->getChildWithTagNameIterator ("PRESET"))
+        {
+            const auto name = e->getStringAttribute ("name");
+            names.insert (name);
+            const auto* st = e->getChildByName (kStateUnit);
+            int seen[kParamCount] {};
+            bool known = st != nullptr && st->getIntAttribute ("format") == kStateFormat;
+            if (st != nullptr)
+                for (auto* q : st->getChildWithTagNameIterator ("PARAM"))
+                {
+                    const int idx = paramIndex (q->getStringAttribute ("id").toStdString());
+                    if (idx < 0) known = false; else ++seen[idx];
+                }
+            bool complete = known;
+            for (int i = 0; i < kParamCount; ++i) complete = complete && seen[i] == 1;
+            check (complete, "preset " + name + ": a complete format 1 state, every param id once");
+            check (! name.containsAnyOf ("0123456789") && e->getStringAttribute ("bank").isNotEmpty(),
+                   "preset " + name + ": descriptive name (no digits) and a bank");
+        }
+    check ((int) names.size() == count, "preset names are unique");
+
+    // The host program list.
+    {
+        OrigamiProcessor p;
+        check (p.getNumPrograms() == count && p.getProgramName (0) == "INIT" && p.getCurrentProgram() == 0,
+               "the host sees the factory bank as programs, INIT current");
+        check (p.getProgramName (count) == juce::String() && p.getProgramName (-1) == juce::String(), "no program names outside the bank");
+    }
+
+    const auto signal = presetTestSignal();
+    for (int k = 0; k < count; ++k)
+    {
+        const auto& pr = bank[(size_t) k];
+        const juce::String tag = "preset " + juce::String (k) + " \"" + pr.name + "\": ";
+        bool inRange = true;
+        for (int i = 0; i < kParamCount; ++i) inRange = inRange && clampParam (i, pr.values[i]) == pr.values[i];
+        check (inRange && pr.values[kLevelComp] == 1.0 && pr.values[kBypass] == 0.0, tag + "values in range, LEVEL COMP ON, not bypassed");
+
+        // The state XML of the preset values round-trips byte- and value-identical.
+        {
+            auto a = stateToXml (pr.values);
+            double back[kParamCount];
+            const bool ok = stateFromXml (*a, back).ok;
+            bool same = ok;
+            for (int i = 0; i < kParamCount; ++i) same = same && back[i] == pr.values[i];
+            check (same && stateToXml (back)->toString() == a->toString(), tag + "state XML round trip is byte- and value-identical");
+        }
+
+        // Choose it as a program, save, load into a fresh instance, save again.
+        OrigamiProcessor p;
+        p.setCurrentProgram (k);
+        juce::String why;
+        check (p.getCurrentProgram() == k && paramsMatch (p, pr.values, false, why), tag + "loads as a program " + why);
+        juce::MemoryBlock a, b;
+        p.getStateInformation (a);
+        OrigamiProcessor q;
+        q.setStateInformation (a.getData(), (int) a.getSize());
+        q.getStateInformation (b);
+        double pv[kParamCount];
+        for (int i = 0; i < kParamCount; ++i) pv[i] = p.value (i);
+        check (a == b && q.getCurrentProgram() == k && paramsMatch (q, pv, true, why), tag + "plugin state round trip is byte- and param-identical " + why);
+
+        // The test signal: finite, not silent, peaks below 0 dBFS (LEVEL COMP on, as shipped). RONIN and SHOGUN
+        // presets also run their bank's signal at -1 dBFS.
+        const auto res = runSignal (p, signal);
+        std::printf ("  preset %-8s %-22s peak %6.2f dBFS  rms %6.2f dBFS", pr.bank.toRawUTF8(), pr.name.toRawUTF8(), res.peakDb, res.rmsDb);
+        check (res.finite && res.rmsDb > -40.0 && res.peakDb < 0.0, tag + "test signal: finite, not silent, peak below 0 dBFS (peak "
+               + juce::String (res.peakDb, 2) + " dBFS, rms " + juce::String (res.rmsDb, 2) + " dBFS)");
+        const auto own = bankTestSignal (pr.bank);
+        if (own.getNumSamples() > 0)
+        {
+            const auto rb = runSignal (p, own);
+            std::printf ("  | %s signal peak %6.2f rms %6.2f", pr.bank.toRawUTF8(), rb.peakDb, rb.rmsDb);
+            check (rb.finite && rb.rmsDb > -40.0 && rb.peakDb < 0.0, tag + pr.bank + " signal at -1 dBFS: finite, not silent, peak below 0 dBFS (peak "
+                   + juce::String (rb.peakDb, 2) + " dBFS)");
+        }
+        std::printf ("\n");
+    }
+}
+
 }
 
 int main (int argc, char** argv)
@@ -249,6 +515,7 @@ int main (int argc, char** argv)
     testStandaloneNormals();
     testSidechain();
     testState();
+    testFactoryPresets();
     testEditor (outDir);
     std::printf ("%d checks, %d failed\n%s\n", checks, failures, failures == 0 ? "ORIGAMI PLUGIN TESTS PASS" : "ORIGAMI PLUGIN TESTS FAIL");
     return failures == 0 ? 0 : 1;

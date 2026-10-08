@@ -30,6 +30,11 @@ private:
     int latencySamples() const override { return proc_.value (origami::kQuality) >= 0.5 ? origami::kLatency2x : 0; }
     double sampleRate() const override { return proc_.currentSampleRate(); }
     double stageCurve (int stage, double x) const override;
+    int presetCount() const override;
+    juce::String presetName (int i) const override;
+    juce::String presetBank (int i) const override;
+    int currentPreset() const override { return proc_.getCurrentProgram(); }
+    void loadPreset (int i) override { proc_.setCurrentProgram (i); }
 
     OrigamiProcessor& proc_;
     OrigamiPanel panel_;

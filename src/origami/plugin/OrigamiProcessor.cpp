@@ -2,6 +2,7 @@
 
 #include "OrigamiProcessor.h"
 #include "OrigamiEditor.h"
+#include "OrigamiPresets.h"
 #include "OrigamiState.h"
 
 using namespace origami;
@@ -72,7 +73,7 @@ bool OrigamiProcessor::isBusesLayoutSupported (const BusesLayout& l) const
     return true;
 }
 
-double OrigamiProcessor::value (int p) const { return (double) raw_[(size_t) p]->load(); }
+double OrigamiProcessor::value (int p) const { return snapParam (p, (double) raw_[(size_t) p]->load()); }
 
 void OrigamiProcessor::setValue (int p, double v)
 {
@@ -89,7 +90,7 @@ void OrigamiProcessor::pullParams (bool force)
 {
     for (int p = 0; p < kParamCount; ++p)
     {
-        const double v = clampParam (p, (double) raw_[(size_t) p]->load (std::memory_order_relaxed));
+        const double v = snapParam (p, (double) raw_[(size_t) p]->load (std::memory_order_relaxed));
         if (force || ! jidai::dsp::same (v, core_.param (p)))
             core_.setParam (p, v);
     }
@@ -153,6 +154,25 @@ void OrigamiProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     for (int c = 2; c < outCh; ++c) out.clear (c, 0, n);
 }
 
+int OrigamiProcessor::getNumPrograms() { return (int) factoryPresets().size(); }
+
+const juce::String OrigamiProcessor::getProgramName (int index)
+{
+    const auto& bank = factoryPresets();
+    return index >= 0 && index < (int) bank.size() ? bank[(size_t) index].displayName() : juce::String();
+}
+
+void OrigamiProcessor::setCurrentProgram (int index)
+{
+    const auto& bank = factoryPresets();
+    if (index < 0 || index >= (int) bank.size()) return;
+    currentProgram_ = index;
+    for (int p = 0; p < kParamCount; ++p)
+        if (p != kBypass)
+            setValue (p, bank[(size_t) index].values[p]);
+    updateHostDisplay (juce::AudioProcessorListener::ChangeDetails().withProgramChanged (true));
+}
+
 juce::AudioProcessorEditor* OrigamiProcessor::createEditor() { return new OrigamiEditor (*this); }
 
 void OrigamiProcessor::getStateInformation (juce::MemoryBlock& dest)
@@ -161,6 +181,7 @@ void OrigamiProcessor::getStateInformation (juce::MemoryBlock& dest)
     for (int p = 0; p < kParamCount; ++p) v[p] = value (p);
     auto x = stateToXml (v);
     x->setAttribute ("ui_scale", (double) uiScale);
+    x->setAttribute ("program", currentProgram_);
     copyXmlToBinary (*x, dest);
 }
 
@@ -172,6 +193,7 @@ void OrigamiProcessor::setStateInformation (const void* data, int size)
     if (! stateFromXml (*x, v).ok) return;
     for (int p = 0; p < kParamCount; ++p) setValue (p, v[p]);
     uiScale = (float) juce::jlimit (0.75, 2.0, x->getDoubleAttribute ("ui_scale", 1.0));
+    currentProgram_ = juce::jlimit (0, getNumPrograms() - 1, x->getIntAttribute ("program", 0));
 }
 
 #if ! ORIGAMI_NO_PLUGIN_ENTRY

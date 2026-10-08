@@ -34,6 +34,15 @@ endif()
 
 enable_testing()
 
+# ---- floating point: no contraction into FMA on ORIGAMI's own targets (clang and gcc; MSVC's default /fp:precise
+# does not contract), so ORIGAMI computes the same bits on arm64 and x86_64. The bit-exact INIT identity does not
+# depend on this (OrigamiParams.h snapParam); it keeps the rest of the DSP identical across targets. ----
+option(ORIGAMI_STRICT_FP "Build ORIGAMI's targets with -ffp-contract=off (clang/gcc)" ON)
+set(ORIGAMI_FP_FLAGS "")
+if(ORIGAMI_STRICT_FP AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  set(ORIGAMI_FP_FLAGS -ffp-contract=off)
+endif()
+
 # ---- DSP core: header-only, C++17, no JUCE. Include as "origami/dsp/OrigamiCore.h". ----
 add_library(origami_dsp INTERFACE)
 add_library(origami::dsp ALIAS origami_dsp)
@@ -47,13 +56,26 @@ set_target_properties(OrigamiTests PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUI
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(OrigamiTests PRIVATE -O2 -Wall -Wextra -Wpedantic -Wshadow -Werror)
 endif()
+target_compile_options(OrigamiTests PRIVATE ${ORIGAMI_FP_FLAGS})
 add_test(NAME origami COMMAND OrigamiTests)
 
 # ---- the panel (JUCE): shared by the plugin editor and the rack's ORIGAMI device. Hosts compile these sources
 # into their own JUCE targets; include as "origami/plugin/OrigamiPanel.h". ----
 set(ORIGAMI_UI_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/origami/plugin/OrigamiPanel.cpp
   CACHE INTERNAL "ORIGAMI panel sources for hosts that embed the ORIGAMI device")
+# ---- factory presets: presets/factory.xml compiled in as binary data (no files on disk, any platform) ----
+juce_add_binary_data(OrigamiFactoryData
+  HEADER_NAME OrigamiFactoryData.h
+  NAMESPACE OrigamiFactoryData
+  SOURCES presets/factory.xml)
+set_target_properties(OrigamiFactoryData PROPERTIES POSITION_INDEPENDENT_CODE ON)
+add_library(origami::factory_data ALIAS OrigamiFactoryData)
+# Hosts (the JIDAI RACK) that offer the factory presets compile these and link origami::factory_data.
+set(ORIGAMI_PRESET_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/origami/plugin/OrigamiPresets.cpp
+  CACHE INTERNAL "ORIGAMI factory preset sources for hosts that embed the ORIGAMI device")
+
 set(ORIGAMI_PLUGIN_SOURCES
+  ${ORIGAMI_PRESET_SOURCES}
   src/origami/plugin/OrigamiProcessor.cpp
   src/origami/plugin/OrigamiEditor.cpp
   ${ORIGAMI_UI_SOURCES})
@@ -74,14 +96,16 @@ juce_add_plugin(Origami
   VST3_CATEGORIES Fx Distortion
   COPY_PLUGIN_AFTER_BUILD FALSE)
 target_sources(Origami PRIVATE ${ORIGAMI_PLUGIN_SOURCES})
+target_compile_options(Origami PRIVATE ${ORIGAMI_FP_FLAGS})
 target_compile_definitions(Origami PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
-target_link_libraries(Origami PRIVATE origami_dsp juce::juce_audio_utils
+target_link_libraries(Origami PRIVATE origami_dsp OrigamiFactoryData juce::juce_audio_utils
   PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 
 # ---- plugin tests + headless screenshots (processor and editor without a host).
 # Pass a folder as the first argument to write the PNGs: OrigamiPluginTests ./shots ----
 juce_add_console_app(OrigamiPluginTests PRODUCT_NAME "OrigamiPluginTests")
 target_sources(OrigamiPluginTests PRIVATE tests/OrigamiPluginTests.cpp ${ORIGAMI_PLUGIN_SOURCES})
+target_compile_options(OrigamiPluginTests PRIVATE ${ORIGAMI_FP_FLAGS})
 target_compile_definitions(OrigamiPluginTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 ORIGAMI_NO_PLUGIN_ENTRY=1)
-target_link_libraries(OrigamiPluginTests PRIVATE origami_dsp juce::juce_audio_utils juce::juce_recommended_config_flags)
+target_link_libraries(OrigamiPluginTests PRIVATE origami_dsp OrigamiFactoryData juce::juce_audio_utils juce::juce_recommended_config_flags)
 add_test(NAME origami_plugin COMMAND OrigamiPluginTests)

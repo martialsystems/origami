@@ -307,6 +307,20 @@ void OrigamiPanel::mouseDown (const juce::MouseEvent& e)
 {
     const auto d = toDesign (e.position);
     if (const int t = tabAt (d); t >= 0) { setPage ((Page) t); return; }
+    if (const auto pp = presetPartAt (d); pp != PresetPart::None)
+    {
+        if (pp == PresetPart::Prev) stepPreset (-1);
+        else if (pp == PresetPart::Next) stepPreset (1);
+        else
+        {
+            juce::Component::SafePointer<OrigamiPanel> safe (this);
+            presetMenu().showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
+                                            .withTargetScreenArea (localAreaToGlobal (juce::Rectangle<float> (
+                                                presetPartCentre (PresetPart::Prev), presetPartCentre (PresetPart::Next)).toNearestInt().expanded (0, 10))),
+                                        [safe] (int id) { if (id > 0 && safe != nullptr) { safe->access_.loadPreset (id - 1); safe->repaint(); } });
+        }
+        return;
+    }
     if (const int s = scaleButtonAt (d); s >= 0) { uiScale = kScales[s]; if (onScale) onScale (kScales[s]); repaint(); return; }
     const int i = controlAt (d);
     if (i < 0) return;
@@ -369,16 +383,18 @@ void OrigamiPanel::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseW
 juce::String OrigamiPanel::getTooltip()
 {
     const auto local = getMouseXYRelative().toFloat();
+    if (presetPartAt (toDesign (local)) != PresetPart::None)
+        return juce::String (juce::CharPointer_UTF8 ("FACTORY PRESETS  \xc2\xb7  arrows step through all banks, click the name for the menu (INIT, RONIN, SHOGUN, BUSHIDO, GENERIC)"));
     if (const int j = jackAt (local); j >= 0)
     {
-        juce::String s = juce::String (kJackIds[j]) + (jackIsAudio (j) ? "  ·  AUDIO" : "  ·  CV");
-        if (j >= Vc1 && j <= Vc3) s << "  ·  audio rate OK (unsmoothed)";
-        if (j == VcaCv) s << "  ·  0..5 V sets the VCA when VCA SOURCE = CV";
+        juce::String s = juce::String (kJackIds[j]) + (jackIsAudio (j) ? juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  AUDIO")) : juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  CV")));
+        if (j >= Vc1 && j <= Vc3) s << juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  audio rate OK (unsmoothed)"));
+        if (j == VcaCv) s << juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  0..5 V sets the VCA when VCA SOURCE = CV"));
         if (mode_ == Mode::Plugin)
         {
-            if (j == InL || j == InR) s << "  ·  normalled to the host input";
-            else if (jackIsOutput (j)) s << "  ·  goes to the host output";
-            else s << "  ·  in the plugin: internal source or sidechain (STAGES)";
+            if (j == InL || j == InR) s << juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  normalled to the host input"));
+            else if (jackIsOutput (j)) s << juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  goes to the host output"));
+            else s << juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  in the plugin: internal source or sidechain (STAGES)"));
         }
         return s;
     }
@@ -453,6 +469,98 @@ void OrigamiPanel::paintPluginChrome (juce::Graphics& g)
         text (g, x + 46, 18, pageName ((Page) i), 8.5f, juce::Justification::horizontallyCentred, on ? juce::Colour (0xff0b0b12) : kInk);
     }
     text (g, kPluginW - 46, 19, statusText(), 8, juce::Justification::right, kDim);
+    if (showsPresets()) paintPresetBox (g);
+}
+
+// ---------------------------------------------------------------------------------------------- presets
+
+namespace {
+constexpr float kPresetX = 804.0f, kPresetW = 236.0f, kPresetArrow = 20.0f;
+}
+
+void OrigamiPanel::paintPresetBox (juce::Graphics& g)
+{
+    const juce::Rectangle<float> box (kPresetX, 4.0f, kPresetW, 20.0f);
+    g.setColour (juce::Colour (0xff16161b));
+    g.fillRoundedRectangle (box, 3.0f);
+    g.setColour (juce::Colour (0xff30324a));
+    g.drawRoundedRectangle (box, 3.0f, 1.0f);
+    g.drawVerticalLine ((int) (kPresetX + kPresetArrow), 5.0f, 23.0f);
+    g.drawVerticalLine ((int) (kPresetX + kPresetW - kPresetArrow), 5.0f, 23.0f);
+    for (int side = 0; side < 2; ++side)
+    {
+        const float cx = side == 0 ? kPresetX + kPresetArrow * 0.5f : kPresetX + kPresetW - kPresetArrow * 0.5f;
+        juce::Path tri;
+        if (side == 0) tri.addTriangle (cx + 3.0f, 10.0f, cx + 3.0f, 18.0f, cx - 3.0f, 14.0f);
+        else           tri.addTriangle (cx - 3.0f, 10.0f, cx - 3.0f, 18.0f, cx + 3.0f, 14.0f);
+        g.setColour (kInk);
+        g.fillPath (tri);
+    }
+    const int cur = access_.currentPreset();
+    juce::String label = "PRESET";
+    if (cur >= 0 && cur < access_.presetCount())
+    {
+        const auto bank = access_.presetBank (cur);
+        label = (bank.isEmpty() || bank == "INIT") ? access_.presetName (cur)
+                                                   : bank + juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 ")) + access_.presetName (cur);
+    }
+    g.setColour (kInk);
+    g.setFont (font (8.5f));
+    g.drawFittedText (label, juce::Rectangle<int> ((int) (kPresetX + kPresetArrow + 4.0f), 4, (int) (kPresetW - 2.0f * kPresetArrow - 8.0f), 20),
+                      juce::Justification::centred, 1, 0.8f);
+}
+
+OrigamiPanel::PresetPart OrigamiPanel::presetPartAt (juce::Point<float> d) const
+{
+    if (! showsPresets() || d.y < 2 || d.y > 26 || d.x < kPresetX || d.x > kPresetX + kPresetW) return PresetPart::None;
+    if (d.x < kPresetX + kPresetArrow) return PresetPart::Prev;
+    if (d.x > kPresetX + kPresetW - kPresetArrow) return PresetPart::Next;
+    return PresetPart::Name;
+}
+
+juce::Point<float> OrigamiPanel::presetPartCentre (PresetPart part) const
+{
+    const float x = part == PresetPart::Prev ? kPresetX + kPresetArrow * 0.5f
+                  : part == PresetPart::Next ? kPresetX + kPresetW - kPresetArrow * 0.5f
+                                             : kPresetX + kPresetW * 0.5f;
+    return toLocal ({ x, 14.0f });
+}
+
+juce::PopupMenu OrigamiPanel::presetMenu() const
+{
+    juce::PopupMenu menu;
+    juce::StringArray banks;
+    const int n = access_.presetCount(), cur = access_.currentPreset();
+    for (int i = 0; i < n; ++i)
+    {
+        const auto b = access_.presetBank (i);
+        if (b.isEmpty() || b == "INIT")
+            menu.addItem (i + 1, access_.presetName (i), true, i == cur);
+        else
+            banks.addIfNotAlreadyThere (b);
+    }
+    for (const auto& b : banks)
+    {
+        juce::PopupMenu sub;
+        bool holdsCurrent = false;
+        for (int i = 0; i < n; ++i)
+            if (access_.presetBank (i) == b)
+            {
+                sub.addItem (i + 1, access_.presetName (i), true, i == cur);
+                holdsCurrent = holdsCurrent || i == cur;
+            }
+        menu.addSubMenu (b, sub, true, nullptr, holdsCurrent);
+    }
+    return menu;
+}
+
+void OrigamiPanel::stepPreset (int delta)
+{
+    const int n = access_.presetCount();
+    if (n <= 0) return;
+    const int cur = juce::jmax (0, access_.currentPreset());
+    access_.loadPreset (((cur + delta) % n + n) % n);
+    repaint();
 }
 
 void OrigamiPanel::paintFace (juce::Graphics& g, juce::Point<float> o)

@@ -34,10 +34,12 @@ public:
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram (int) override {}
-    const juce::String getProgramName (int) override { return "INIT"; }
+    // Programs = the embedded factory bank (OrigamiPresets.h), INIT first. Choosing one sets every parameter
+    // except BYPASS to the preset's value, notifying the host. The chosen index is saved with the state.
+    int getNumPrograms() override;
+    int getCurrentProgram() override { return currentProgram_; }
+    void setCurrentProgram (int index) override;
+    const juce::String getProgramName (int index) override;
     void changeProgramName (int, const juce::String&) override {}
     void getStateInformation (juce::MemoryBlock&) override;
     void setStateInformation (const void*, int) override;
@@ -63,4 +65,5 @@ private:
     origami::OrigamiCore core_;
     double sampleRate_ = 48000.0;
     double scFollow_ = 0.0;
+    int currentProgram_ = 0;
 };

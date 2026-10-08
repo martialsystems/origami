@@ -4,6 +4,7 @@
 // Framework-free. Values are stored in their natural units (dB, ms, 0..1, -1..1, choice index).
 
 #include <cmath>
+#include <initializer_list>
 #include <string>
 
 namespace origami {
@@ -90,6 +91,21 @@ inline double clampParam (int p, double v)
     if (v != v) v = i.def;
     v = v < i.min ? i.min : (v > i.max ? i.max : v);
     if (i.choices > 0) v = (double) (long) (v + 0.5);
+    return v;
+}
+
+// Host parameters travel as a float 0..1 value, so a natural value read back can sit a few ulps away from the value
+// that was set, and by how much depends on the build (FMA contraction on arm64 and some x86 targets). Snap a value
+// within 1e-6 of the range to the default or to either end, so the exact settings (0 dB GAIN and LEVEL, MIX 1,
+// VCA DEPTH 0, WAVE 0) are exact on every platform and the INIT identity stays bit-exact.
+inline double snapParam (int p, double v)
+{
+    const auto& i = paramInfo (p);
+    v = clampParam (p, v);
+    const double tol = 1e-6 * (i.max - i.min);
+    for (double target : { i.def, i.min, i.max })
+        if (std::fabs (v - target) <= tol)
+            return target;
     return v;
 }
 

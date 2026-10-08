@@ -34,6 +34,12 @@ public:
         virtual int latencySamples() const = 0;
         virtual double sampleRate() const { return 48000.0; }
         virtual double stageCurve (int stage, double x) const = 0;
+        // Factory presets (plugin mode shows a preset box when presetCount() > 0). Banks group the menu.
+        virtual int presetCount() const { return 0; }
+        virtual juce::String presetName (int) const { return {}; }
+        virtual juce::String presetBank (int) const { return {}; }
+        virtual int currentPreset() const { return -1; }
+        virtual void loadPreset (int) {}
     };
 
     enum class Mode { Plugin, RackOpen, RackClosed };
@@ -78,6 +84,12 @@ public:
     juce::Point<float> tabCentre (origami::Page p) const;   // plugin mode
     juce::Point<float> toLocal (juce::Point<float> design) const;
 
+    // Plugin mode preset box in the header: < previous, the name (click: menu by bank), > next.
+    enum class PresetPart { None, Prev, Name, Next };
+    juce::Point<float> presetPartCentre (PresetPart) const;   // local coordinates
+    juce::PopupMenu presetMenu() const;                        // item id = preset index + 1
+    void stepPreset (int delta);
+
 private:
     enum class Kind { Knob, Toggle, Selector, Button };
     struct Control
@@ -100,6 +112,9 @@ private:
     int controlAt (juce::Point<float> design) const;
     int tabAt (juce::Point<float> design) const;
     int scaleButtonAt (juce::Point<float> design) const;
+    PresetPart presetPartAt (juce::Point<float> design) const;
+    bool showsPresets() const { return mode_ == Mode::Plugin && access_.presetCount() > 0; }
+    void paintPresetBox (juce::Graphics&);
 
     void paintPluginChrome (juce::Graphics&);
     void paintFace (juce::Graphics&, juce::Point<float> o);

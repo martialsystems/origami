@@ -225,14 +225,34 @@ public:
             wetR = activeOut ? w[1] : refR;
         }
 
-        // DC block and LEVEL COMP (stereo-linked), at the base rate after the folder.
+        // LEVEL COMP's reference at 1x: every stage that runs (not a wire) is first-order ADAA, which also averages
+        // neighbouring samples, a cos(pi f / fs) low-pass on top of the fold (-5 dB per stage at 15 kHz). The reference
+        // takes the same averages, so LEVEL COMP matches the fold's loudness and not that filter. Without this it
+        // boosts bright material by up to +12 dB and the next low transient overshoots by as much. At 2x the
+        // averages run at 2fs and cost at most ~1 dB per stage at 15 kHz, so the reference stays as is.
+        double lcRefL = refL, lcRefR = refR;
+        if (! quality_)
+            for (int s = 0; s < 3; ++s)
+            {
+                const bool avg = active && ! shaper_[0].stageIsWire (s);
+                const double inL = lcRefL, inR = lcRefR;
+                if (avg) { lcRefL = 0.5 * (inL + lcAvg_[0][s]); lcRefR = 0.5 * (inR + lcAvg_[1][s]); }
+                lcAvg_[0][s] = inL;
+                lcAvg_[1][s] = inR;
+            }
+
+        // DC block and LEVEL COMP (stereo-linked), at the base rate after the folder. LEVEL COMP measures the folder's
+        // output before the DC block, offset included: an asymmetric fold carries an offset that the DC block removes
+        // and that returns as a step when the signal stops, and measured this way that step can never exceed the
+        // matched level, however much LEVEL COMP boosts.
         if (activeOut)
         {
+            const double rawSq = 0.5 * (wetL * wetL + wetR * wetR);
             wetL = dc_[0].process (wetL);
             wetR = dc_[1].process (wetR);
             if (params_[kLevelComp] >= 0.5)
             {
-                const double g = lc_.gainFor (0.5 * (refL * refL + refR * refR), 0.5 * (wetL * wetL + wetR * wetR));
+                const double g = lc_.gainFor (0.5 * (lcRefL * lcRefL + lcRefR * lcRefR), rawSq);
                 wetL *= g;
                 wetR *= g;
             }
@@ -310,6 +330,7 @@ private:
         lc_.prepare (fs_);
         follow_ = 0.0;
         for (int i = 0; i < kRing; ++i) { exactL_[i] = exactR_[i] = dryRingL_[i] = dryRingR_[i] = 0.0; activeHist_[i] = false; }
+        for (auto& ch : lcAvg_) for (auto& v : ch) v = 0.0;
         pos_ = 0;
         emphK_ = std::tan (jidai::dsp::kPi * 1000.0 / processRate());
         emphApplied_ = -1.0;
@@ -370,6 +391,7 @@ private:
     jidai::dsp::LevelComp lc_;
     double follow_ = 0.0;
     double exactL_[kRing] {}, exactR_[kRing] {}, dryRingL_[kRing] {}, dryRingR_[kRing] {};
+    double lcAvg_[2][3] {};          // LEVEL COMP reference: the previous input of each stage's average (1x)
     bool activeHist_[kRing] {};
     int pos_ = 0;
     jidai::jcs::OverRangeLed led_;
