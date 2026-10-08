@@ -15,6 +15,12 @@
 #include <map>
 #include <set>
 
+// The checks below compare saved, restored and rendered values exactly on purpose (a round trip must be bit-exact),
+// so -Wfloat-equal is off for this file only; ORIGAMI's product code keeps it.
+#if defined (__GNUC__) || defined (__clang__)
+ #pragma GCC diagnostic ignored "-Wfloat-equal"
+#endif
+
 using namespace origami;
 
 namespace {
@@ -390,7 +396,7 @@ SignalResult runSignal (OrigamiProcessor& p, const juce::AudioBuffer<float>& sig
         for (int c = 0; c < 2; ++c)
             for (int i = 0; i < len; ++i)
             {
-                const double v = blk.getSample (c, i);
+                const double v = (double) blk.getSample (c, i);
                 res.finite = res.finite && std::isfinite (v);
                 peak = std::max (peak, std::abs (v));
                 sum += v * v;

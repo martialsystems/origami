@@ -13,8 +13,8 @@ juce::NormalisableRange<float> rangeFor (int p)
     const auto& i = paramInfo (p);
     if (p == kAttack || p == kRelease)
         return { (float) i.min, (float) i.max,
-                 [p] (float, float, float n) { return (float) fromNormal (p, n); },
-                 [p] (float, float, float v) { return (float) toNormal (p, v); } };
+                 [p] (float, float, float n) { return (float) fromNormal (p, (double) n); },
+                 [p] (float, float, float v) { return (float) toNormal (p, (double) v); } };
     return { (float) i.min, (float) i.max };
 }
 }

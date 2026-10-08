@@ -16,7 +16,7 @@ OrigamiEditor::OrigamiEditor (OrigamiProcessor& p) : juce::AudioProcessorEditor 
     };
     setResizable (true, true);
     setResizeLimits (900, 270, 2400, 720);
-    if (auto* c = getConstrainer()) c->setFixedAspectRatio (OrigamiPanel::kPluginW / OrigamiPanel::kPluginH);
+    if (auto* c = getConstrainer()) c->setFixedAspectRatio ((double) (OrigamiPanel::kPluginW / OrigamiPanel::kPluginH));
     setSize (juce::roundToInt (OrigamiPanel::kPluginW * startScale), juce::roundToInt (OrigamiPanel::kPluginH * startScale));
 }
 
