@@ -3,9 +3,9 @@
 // round trip, the editor's sizes and controls. Writes PNGs of the editor and the rack panel modes when given an
 // output directory:  OrigamiPluginTests [out-dir]
 
-#include "../plugin/OrigamiEditor.h"
-#include "../plugin/OrigamiProcessor.h"
-#include "../plugin/OrigamiState.h"
+#include "origami/plugin/OrigamiEditor.h"
+#include "origami/plugin/OrigamiProcessor.h"
+#include "origami/plugin/OrigamiState.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 

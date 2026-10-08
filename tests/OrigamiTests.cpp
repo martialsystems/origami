@@ -2,8 +2,8 @@
 // ORIGAMI DSP core tests (no JUCE): ORIGAMI_Proposal.md 7 (testFxBypass, testFxLatency, testFxStereoLink,
 // testEmphInverse) plus level, symmetry, VC, aliasing at 1x/2x and NaN/denormal hygiene.
 
-#include "../dsp/OrigamiCore.h"
-#include "../../jidai-common/tests/TestFft.h"
+#include "origami/dsp/OrigamiCore.h"
+#include "../third_party/jidai-common/tests/TestFft.h"
 
 #include <cmath>
 #include <cstdint>
