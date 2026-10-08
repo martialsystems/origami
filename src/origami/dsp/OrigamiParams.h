@@ -88,7 +88,7 @@ inline int paramIndex (const std::string& id)
 inline double clampParam (int p, double v)
 {
     const auto& i = paramInfo (p);
-    if (v != v) v = i.def;
+    if (std::isnan (v)) v = i.def;
     v = v < i.min ? i.min : (v > i.max ? i.max : v);
     if (i.choices > 0) v = (double) (long) (v + 0.5);
     return v;
