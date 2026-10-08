@@ -91,6 +91,37 @@ void testBypass()
     auto L = run (*c, 3000, [] (int i, OrigamiCore::Inputs& in) { in.inL = in.inR = std::sin (i * 0.031) * 4.0; });
     for (int i = 0; i < 3000; ++i) exact = exact && L[(size_t) i] == std::sin (i * 0.031) * 4.0;
     check (exact, "BYPASS switch: dry passes bit-exact");
+
+    // jidai-common 1.1.2: WAVE 0 is a true bypass at ANY SYM (a stage at amount 0 is y = x whatever its symmetry),
+    // including a live VC with SYM depth only. Bit-identical at 1x and 2x.
+    for (int q = 0; q < 2; ++q)
+    {
+        auto s = make();
+        s->setParam (kQuality, q);
+        s->setParam (kSym, 0.6);
+        s->setParam (kSym2, -0.4);
+        s->setParam (kVc1Src, 2.0);     // follower, live
+        s->setParam (kVc1Sym, 0.5);
+        s->prepare (48000.0);
+        Rng r;
+        std::vector<float> x (6000);
+        for (auto& v : x) v = (float) ((r.uni() * 2.0 - 1.0) * 6.0);
+        auto y = run (*s, (int) x.size(), [&] (int i, OrigamiCore::Inputs& in) { in.inL = in.inR = x[(size_t) i]; });
+        const int lat = q ? 46 : 0;
+        bool ident = true;
+        for (size_t i = 0; i < x.size(); ++i)
+            ident = ident && (float) y[i] == (i >= (size_t) lat ? x[i - (size_t) lat] : 0.0f);
+        check (ident, std::string ("WAVE 0 with SYM 0.6, SYM2 -0.4 and VC1 > SYM live is bit-identical at ") + (q ? "2x" : "1x"));
+    }
+    // A stage whose amount is 0 inside a WAVE setting is a wire at any SYM; the others run.
+    {
+        auto s = make();
+        s->setParam (kWave, 0.3);       // stage 3 amount 0
+        s->setParam (kSym, 0.5);
+        s->prepare (48000.0);
+        run (*s, 2000, [] (int i, OrigamiCore::Inputs& in) { in.inL = in.inR = std::sin (i * 0.05); });
+        check (! s->stageIsWire (0) && ! s->stageIsWire (1) && s->stageIsWire (2), "WAVE 0.3, SYM 0.5: stage 3 (amount 0) is a wire");
+    }
 }
 
 void testLatency()

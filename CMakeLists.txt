@@ -23,7 +23,7 @@ if(NOT COMMAND juce_add_plugin)
   FetchContent_MakeAvailable(JUCE)
 endif()
 
-# ---- jidai-common 1.1.1 (Jidai Cable Standard v1.1 + shared DSP), vendored verbatim in third_party/jidai-common.
+# ---- jidai-common 1.1.2 (Jidai Cable Standard v1.1 + shared DSP), vendored verbatim in third_party/jidai-common.
 # If the host already defines jidai::common (the Jidai Rack does), that target is used instead, so the host binary
 # has a single jidai-common include path and one copy of each header. ----
 if(TARGET jidai::common)

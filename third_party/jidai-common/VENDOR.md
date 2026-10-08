@@ -2,12 +2,13 @@
 
 - Source: `jidai-collection` repository, folder `jidai-common/`
 - Branch: `redesign/jidai`
-- Commit: `24ee621` ("jidai-common 1.1.1: SHOGUN + RONIN fix batch (re-vendor this commit)"), version 1.1.1
-- Copied verbatim with `git archive 24ee621 jidai-common`; no local edits. Only this VENDOR.md was added.
+- Commit: `8a4b5ae` ("jidai-common 1.1.2: AMT 0 transparent, group delay API, lin55 floor (re-vendor this commit)"),
+  version 1.1.2 (was 24ee621, 1.1.1)
+- Copied verbatim with `git archive 8a4b5ae jidai-common`; no local edits. Only this VENDOR.md was added.
 
 ORIGAMI uses:
 - `jidai/dsp/TripleShaper.h`: the three folding stages (first-order ADAA), the DC blocker, LEVEL COMP, and
-  `planBlock`, called once per block.
+  `planBlock`, called once per block. Since 1.1.2 a stage whose amount is 0 is a wire at any SYM.
 - `jidai/dsp/Halfband.h` (93 taps, 23 samples each way): the 2x QUALITY up/down sampler (46 samples total).
 - `jidai/jcs/Volts.h` and `jidai/jcs/State.h`: +-5 V audio scaling, the R15 OVER LED, and the state format.
 - `tests/TestFft.h`: the FFT helper used by `OrigamiTests` (test code only).

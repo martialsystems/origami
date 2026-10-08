@@ -8,10 +8,13 @@
 //   IN -> GAIN -> pre-fold VCA -> EMPH pre -> STAGE 1 -> 2 -> 3 -> EMPH post -> DC block 8 Hz -> LEVEL COMP
 //      -> MIX (dry aligned) -> LEVEL -> OUT
 // Units: volts in and out (+-5 V Jidai audio). The standalone converts host floats with x5 / /5 (exact in double).
-// True bypass: WAVE 0 with every trim, SYM and EMPH at 0 (and no VC depth on a live source) skips the stages, EMPH,
-// the DC block and LEVEL COMP; with GAIN 0 dB, VCA DEPTH 0 and LEVEL 0 dB the output is bit-identical to the input
+// True bypass: WAVE 0 with every trim and EMPH at 0, at any SYM (and no VC > AMT depth on a live source) skips the
+// stages, EMPH, the DC block and LEVEL COMP; with GAIN 0 dB, VCA DEPTH 0 and LEVEL 0 dB the output is bit-identical to the input
 // (delayed by the reported latency when 2x is on).
 // Latency: 0 at 1x; 46 samples at 2x (93-tap halfband up 23 + down 23; the dry path is delayed to match).
+// Each running stage's first-order ADAA adds half a sample of group delay at the shaper rate (TripleShaper::groupDelay,
+// 0.5 .. 1.5 samples at 1x, a quarter of a base sample per stage at 2x). It depends on WAVE and is fractional, so it is
+// not reported or compensated (an averaged dry would lose the exact MIX 0); the manual's MIX row states its effect.
 
 #include "OrigamiParams.h"
 #include "jidai/dsp/Halfband.h"
@@ -119,15 +122,17 @@ public:
     int latencySamples() const noexcept { return quality_ ? kLatency2x : 0; }
     bool oversampled() const noexcept { return quality_ != 0; }
 
-    // Once per block, before its first process() call (jidai-common 1.1.1: the shaper skips a stage only for a whole
-    // block). A stage is a true wire for the block when every control is settled (no smoothing ramp), its amount and
-    // symmetry are exactly 0 and no live VC source has depth on it. vcPatched / sidechainLive: as process() will see
+    // Once per block, before its first process() call (jidai-common 1.1.2: the shaper skips a stage only for a whole
+    // block). A stage is a true wire for the block when its amount controls are settled (no smoothing ramp), its amount
+    // is exactly 0 (any symmetry) and no live VC source has AMT depth on it. vcPatched / sidechainLive: as process() will see
     // them for this block. Without a call no stage is skipped (correct, just a little more CPU).
     void planBlock (const bool vcPatched[3], bool sidechainLive) noexcept
     {
         syncSmoothers (false);
         bool steady = true;
-        for (const auto* s : { &wave_, &symG_, &trim_[0], &trim_[1], &trim_[2], &sym_[0], &sym_[1], &sym_[2] })
+        // Only the amount controls decide (jidai-common 1.1.2): at amount 0 a stage is y = x for any symmetry, so a SYM
+        // ramp does not keep a zero-amount stage running.
+        for (const auto* s : { &wave_, &trim_[0], &trim_[1], &trim_[2] })
             steady = steady && jidai::dsp::same (s->value, s->target);
         jidai::dsp::ShaperControls ctl;
         ctl.macro = wave_.value;

@@ -99,7 +99,7 @@ The drive into the folder is `1 − DEPTH + DEPTH × E`, where E is the follower
 
 | Control | Range | Default | What it does |
 |---|---|---|---|
-| **WAVE** | 0–100 % | 0 % | The main fold amount. It sweeps stage 1, then stage 2, then stage 3. At 0, with the trims, SYM and EMPH also at 0, the folder is bypassed exactly. |
+| **WAVE** | 0–100 % | 0 % | The main fold amount. It sweeps stage 1, then stage 2, then stage 3. At 0, with the trims and EMPH also at 0, the folder is bypassed exactly, wherever SYM is set. |
 | **EMPH** | 0 to +12 dB | 0 dB | Emphasis: a high shelf (centred at 1 kHz) before the folder and its exact inverse after it. The fold bites harder on bright material while the overall tone stays balanced. |
 | **SYM** | −1 to +1 | 0 | Symmetry for all three stages. Off centre, the fold is lopsided and adds even harmonics. |
 | **STAGE 1, 2, 3** | −1 to +1 | 0 | Trims that push each stage above or below what WAVE gives it. |
@@ -108,7 +108,7 @@ The drive into the folder is `1 − DEPTH + DEPTH × E`, where E is the follower
 
 | Control | Range | Default | What it does |
 |---|---|---|---|
-| **MIX** | 0–100 % | 100 % | Dry/wet. The dry signal is delayed to match the wet one, so blending never smears or thins the sound. |
+| **MIX** | 0–100 % | 100 % | Dry/wet. The dry signal is delayed by the same latency as the wet one, so the blend stays in time. The folding itself trails the dry by a fraction of a sample, up to 1.5 samples at 1× with all three stages folding (a quarter of that at 2×), which only touches the very top end of a blend. |
 | **LEVEL** | −36 to +6 dB | 0 dB | Output level. |
 | **LEVEL COMP** | off / on | on | Holds the folded signal's loudness close to the input's while you sweep WAVE (20 ms RMS detection, up to ±12 dB, 5 ms smoothing). |
 | Meter and **OVER** | | | Output level. OVER lights when the output goes past full scale. |
@@ -163,7 +163,7 @@ The follower listens to both channels at once and also sets the timing of the pl
 
 | Box | Control | What it does |
 |---|---|---|
-| QUALITY | **1× / 2×** | 1× (default) has no latency and uses anti-aliased folding. 2× runs the folder at twice the sample rate for even less aliasing and adds 46 samples of latency, which ORIGAMI reports to your DAW. The display shows the latency in samples and milliseconds. |
+| QUALITY | **1× / 2×** | 1× (default) has no latency and uses anti-aliased folding; the anti-aliasing softens the very top end a little (about 2 dB at 10 kHz for each stage that is folding, at 48 kHz). 2× runs the folder at twice the sample rate for even less aliasing and adds 46 samples of latency, which ORIGAMI reports to your DAW. The display shows the latency in samples and milliseconds. |
 | PANEL | **UI SCALE** 75 %, 100 %, 125 %, 150 %, 200 % | Window size. You can also drag the window's corner. In the rack the size follows the rack. |
 | PANEL | Cable colour | Information only. In the rack, cable colours follow each jack's signal type. |
 | LEVEL | **LEVEL COMP** off/on | The same switch as on the MAIN page. |
