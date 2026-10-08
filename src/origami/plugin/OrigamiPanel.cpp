@@ -423,6 +423,7 @@ void OrigamiPanel::paint (juce::Graphics& g)
     {
         if (mode_ == Mode::Plugin) paintPluginChrome (g);
         paintFace (g, faceOrigin());
+        if (mode_ == Mode::RackOpen && showsPresets()) paintPresetBox (g);
     }
     for (auto& c : controls_) paintControl (g, c);
     if (drag_ >= 0)
@@ -475,24 +476,33 @@ void OrigamiPanel::paintPluginChrome (juce::Graphics& g)
 // ---------------------------------------------------------------------------------------------- presets
 
 namespace {
-constexpr float kPresetX = 804.0f, kPresetW = 236.0f, kPresetArrow = 20.0f;
+constexpr float kPresetW = 236.0f, kPresetArrow = 20.0f;
+}
+
+juce::Rectangle<float> OrigamiPanel::presetBox() const
+{
+    if (mode_ == Mode::Plugin)
+        return { 804.0f, 4.0f, kPresetW, 20.0f };
+    // Rack: centred in the jack row, between VC 1 and VC 2.
+    return { (kJackX[Vc1] + kJackX[Vc2]) * 0.5f - kPresetW * 0.5f, kJackY - 22.0f, kPresetW, 20.0f };
 }
 
 void OrigamiPanel::paintPresetBox (juce::Graphics& g)
 {
-    const juce::Rectangle<float> box (kPresetX, 4.0f, kPresetW, 20.0f);
+    const juce::Rectangle<float> box = presetBox();
+    const float kPresetX = box.getX(), top = box.getY();
     g.setColour (juce::Colour (0xff16161b));
     g.fillRoundedRectangle (box, 3.0f);
     g.setColour (juce::Colour (0xff30324a));
     g.drawRoundedRectangle (box, 3.0f, 1.0f);
-    g.drawVerticalLine ((int) (kPresetX + kPresetArrow), 5.0f, 23.0f);
-    g.drawVerticalLine ((int) (kPresetX + kPresetW - kPresetArrow), 5.0f, 23.0f);
+    g.drawVerticalLine ((int) (kPresetX + kPresetArrow), top + 1.0f, top + 19.0f);
+    g.drawVerticalLine ((int) (kPresetX + kPresetW - kPresetArrow), top + 1.0f, top + 19.0f);
     for (int side = 0; side < 2; ++side)
     {
         const float cx = side == 0 ? kPresetX + kPresetArrow * 0.5f : kPresetX + kPresetW - kPresetArrow * 0.5f;
         juce::Path tri;
-        if (side == 0) tri.addTriangle (cx + 3.0f, 10.0f, cx + 3.0f, 18.0f, cx - 3.0f, 14.0f);
-        else           tri.addTriangle (cx - 3.0f, 10.0f, cx - 3.0f, 18.0f, cx + 3.0f, 14.0f);
+        if (side == 0) tri.addTriangle (cx + 3.0f, top + 6.0f, cx + 3.0f, top + 14.0f, cx - 3.0f, top + 10.0f);
+        else           tri.addTriangle (cx - 3.0f, top + 6.0f, cx - 3.0f, top + 14.0f, cx + 3.0f, top + 10.0f);
         g.setColour (kInk);
         g.fillPath (tri);
     }
@@ -506,24 +516,28 @@ void OrigamiPanel::paintPresetBox (juce::Graphics& g)
     }
     g.setColour (kInk);
     g.setFont (font (8.5f));
-    g.drawFittedText (label, juce::Rectangle<int> ((int) (kPresetX + kPresetArrow + 4.0f), 4, (int) (kPresetW - 2.0f * kPresetArrow - 8.0f), 20),
+    g.drawFittedText (label, juce::Rectangle<int> ((int) (kPresetX + kPresetArrow + 4.0f), (int) top, (int) (kPresetW - 2.0f * kPresetArrow - 8.0f), 20),
                       juce::Justification::centred, 1, 0.8f);
 }
 
 OrigamiPanel::PresetPart OrigamiPanel::presetPartAt (juce::Point<float> d) const
 {
-    if (! showsPresets() || d.y < 2 || d.y > 26 || d.x < kPresetX || d.x > kPresetX + kPresetW) return PresetPart::None;
-    if (d.x < kPresetX + kPresetArrow) return PresetPart::Prev;
-    if (d.x > kPresetX + kPresetW - kPresetArrow) return PresetPart::Next;
+    if (! showsPresets())
+        return PresetPart::None;
+    const auto box = presetBox();
+    if (d.y < box.getY() - 2.0f || d.y > box.getBottom() + 2.0f || d.x < box.getX() || d.x > box.getRight()) return PresetPart::None;
+    if (d.x < box.getX() + kPresetArrow) return PresetPart::Prev;
+    if (d.x > box.getRight() - kPresetArrow) return PresetPart::Next;
     return PresetPart::Name;
 }
 
 juce::Point<float> OrigamiPanel::presetPartCentre (PresetPart part) const
 {
-    const float x = part == PresetPart::Prev ? kPresetX + kPresetArrow * 0.5f
-                  : part == PresetPart::Next ? kPresetX + kPresetW - kPresetArrow * 0.5f
-                                             : kPresetX + kPresetW * 0.5f;
-    return toLocal ({ x, 14.0f });
+    const auto box = presetBox();
+    const float x = part == PresetPart::Prev ? box.getX() + kPresetArrow * 0.5f
+                  : part == PresetPart::Next ? box.getRight() - kPresetArrow * 0.5f
+                                             : box.getCentreX();
+    return toLocal ({ x, box.getCentreY() });
 }
 
 juce::PopupMenu OrigamiPanel::presetMenu() const
@@ -660,7 +674,8 @@ void OrigamiPanel::paintStages (juce::Graphics& g, juce::Point<float> o)
         g.restoreState();
         text (g, v.getCentreX(), v.getBottom() + 12, "transfer at current WAVE / STAGE / SYM", 6.5f, juce::Justification::horizontallyCentred, kDim, false);
     }
-    text (g, o.x + kFaceW * 0.5f, o.y + 250, juce::String (juce::CharPointer_UTF8 ("VC source: a patched VC jack wins \xc2\xb7 INPUT = the signal itself \xc2\xb7 FOLLOW = envelope \xc2\xb7 SIDECHAIN = plugin sidechain")),
+    text (g, o.x + kFaceW * 0.5f, o.y + 250, juce::String (juce::CharPointer_UTF8 (mode_ == Mode::Plugin ? "VC source: a patched VC jack wins \xc2\xb7 INPUT = the signal itself \xc2\xb7 FOLLOW = envelope \xc2\xb7 SIDECHAIN = plugin sidechain"
+                                                                 : "VC source: a patched VC jack wins \xc2\xb7 INPUT = the signal itself \xc2\xb7 FOLLOW = envelope \xc2\xb7 SIDECHAIN = SC jacks (back)")),
           6.5f, juce::Justification::horizontallyCentred, kDim, false);
 }
 

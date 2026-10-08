@@ -254,6 +254,12 @@ void testEditor (const juce::File& outDir)
             for (int i = 0; i < kParamCount; ++i) v[i] = p.value (i);
             return OrigamiCore::stageCurve (v, s, x);
         }
+        // The factory bank, as the rack device offers it.
+        int presetCount() const override { return (int) factoryPresets().size(); }
+        juce::String presetName (int i) const override { return factoryPresets()[(size_t) i].name; }
+        juce::String presetBank (int i) const override { return factoryPresets()[(size_t) i].bank; }
+        int currentPreset() const override { return p.getCurrentProgram(); }
+        void loadPreset (int i) override { p.setCurrentProgram (i); }
     } bind (p);
     OrigamiPanel open (bind, OrigamiPanel::Mode::RackOpen), closed (bind, OrigamiPanel::Mode::RackClosed);
     open.setSize (1136, 332);
@@ -264,6 +270,22 @@ void testEditor (const juce::File& outDir)
     closed.mouseDown (mouse (closed, bc, bc, false)); closed.mouseUp (mouse (closed, bc, bc, false));
     check (p.value (kBypass) == 1.0, "CLOSED strip BYPASS button");
     closed.mouseDown (mouse (closed, bc, bc, false)); closed.mouseUp (mouse (closed, bc, bc, false));
+    // The rack face carries the preset box in the jack row, between VC 1 and VC 2 (the rack strip has no room).
+    {
+        const auto prev = open.presetPartCentre (OrigamiPanel::PresetPart::Prev), next = open.presetPartCentre (OrigamiPanel::PresetPart::Next);
+        check (prev.x > open.jackCentre (OrigamiPanel::Vc1).x + 12.0f && next.x < open.jackCentre (OrigamiPanel::Vc2).x - 12.0f
+                   && std::abs (prev.y - next.y) < 0.01f && prev.y < open.jackCentre (OrigamiPanel::Vc1).y,
+               "RACK OPEN preset box sits in the jack row between VC 1 and VC 2");
+        const int before = p.getCurrentProgram();
+        double saved[kParamCount];
+        for (int i = 0; i < kParamCount; ++i) saved[i] = p.value (i);
+        open.mouseDown (mouse (open, next, next, false)); open.mouseUp (mouse (open, next, next, false));
+        const int stepped = p.getCurrentProgram();
+        open.mouseDown (mouse (open, prev, prev, false)); open.mouseUp (mouse (open, prev, prev, false));
+        check (stepped == (before + 1) % (int) factoryPresets().size() && p.getCurrentProgram() == before,
+               "RACK OPEN preset box arrows step the factory bank");
+        for (int i = 0; i < kParamCount; ++i) p.setValue (i, saved[i]);     // the snapshots below show the state as before
+    }
     if (outDir != juce::File())
     {
         snapshot (open, outDir.getChildFile ("origami_rack_open_face.png"));

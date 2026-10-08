@@ -8,7 +8,7 @@ ORIGAMI folds your sound three times over. Feed it a bass line, a pad or a full 
 
 - **Three folding stages, one macro.** WAVE sweeps stages 1, 2 and 3 in turn, so a single knob goes from clean to deeply folded. STAGE 1–3 push each stage above or below the macro, and SYM (plus SYM 1–3 per stage) tilts the fold for even harmonics.
 - **True bypass at zero.** With WAVE at 0 and everything else at its default, ORIGAMI passes your audio through bit for bit.
-- **Audio-rate modulation.** VC 1, VC 2 and VC 3 each drive one stage's amount and symmetry. Feed them from the input itself, the envelope follower or the sidechain, or in the rack from any jack.
+- **Audio-rate modulation.** VC 1, VC 2 and VC 3 each drive one stage's amount and symmetry. Feed them from the input itself, the envelope follower or the sidechain (in the rack, the SC L/R jacks on the back), or in the rack from any jack.
 - **Pre-fold VCA.** Drive the folder from the envelope follower or from CV, with a linear or exponential law, ATTACK and RELEASE, and a CV scale.
 - **Emphasis.** EMPH boosts the highs before the folder and removes the boost exactly after it, so the fold bites harder on bright material without making it harsher.
 - **Even loudness.** LEVEL COMP holds the output level steady while you sweep WAVE. An 8 Hz DC block keeps asymmetric folds centred.
@@ -16,7 +16,7 @@ ORIGAMI folds your sound three times over. Feed it a bass line, a pad or a full 
 - **Clean or cleaner.** QUALITY 1x uses antiderivative anti-aliasing with no latency. 2x adds a 93-tap halfband oversampler for very low aliasing and reports its latency to your DAW.
 - **Stereo-linked.** Left and right share every control and the detectors, so the image holds.
 - **Four pages.** MAIN, STAGES, DYNAMICS and SETUP, with input, output and follower meters and an OVER light.
-- **33 factory presets in banks.** INIT plus banks voiced for each Jidai source, picked from the preset box in the header or from your DAW's program list.
+- **33 factory presets in banks.** INIT plus banks voiced for each Jidai source, picked from the preset box in the header (in the rack, in the jack row) or from your DAW's program list.
 
 ## Factory presets
 

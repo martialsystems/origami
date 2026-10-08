@@ -75,7 +75,7 @@ Every control is a plugin parameter, so your DAW can automate it.
 | Element | What it does |
 |---|---|
 | **MAIN / STAGES / DYNAMICS / SETUP** | Page tabs. |
-| **Preset box** | Shows the current factory preset as *BANK · Name*. The arrows step through all presets in order. Click the name for a menu grouped by bank. |
+| **Preset box** | Shows the current factory preset as *BANK · Name*. The arrows step through all presets in order. Click the name for a menu grouped by bank. In the rack, the preset box sits in the jack row, between VC 1 and VC 2. |
 | **Status (top right)** | Shows whether 2× quality is on and the current latency in samples, for example `2× OFF · LAT 0`. |
 
 The jack row along the bottom appears on every page (see 3.7).
@@ -90,7 +90,7 @@ The jack row along the bottom appears on every page (see 3.7).
 |---|---|---|---|
 | **GAIN** | −24 to +12 dB | 0 dB | Input level into the folder. More gain means a deeper fold at any WAVE setting. |
 | **VCA DEPTH** | 0–100 % | 0 % | How much the pre-fold VCA moves the drive. At 0 % the VCA does nothing. At 100 % the drive follows the VCA source completely. |
-| **FOLLOW / CV** | switch | FOLLOW | The VCA source. FOLLOW uses the envelope follower on the input. CV uses the VCA CV jack (in the rack) or the sidechain follower (in the plugin, when your DAW feeds the sidechain). The same switch also appears on the DYNAMICS page. |
+| **FOLLOW / CV** | switch | FOLLOW | The VCA source. FOLLOW uses the envelope follower on the input. CV uses the sidechain follower (when something feeds the sidechain), or in the rack a cable into the VCA CV jack, which wins over the sidechain. The same switch also appears on the DYNAMICS page. |
 | Meter | | | Input level, with the follower level underneath. |
 
 The drive into the folder is `1 − DEPTH + DEPTH × E`, where E is the follower or the CV (0 to 1). With VCA LAW set to EXP, E is squared first.
@@ -133,7 +133,7 @@ The four VC sources:
 - **JACK**: the VC n jack. In the plugin there are no cables, so JACK means no modulation. In the rack, a cable into VC n always wins over the source selector.
 - **INPUT**: the input signal itself, after GAIN and the VCA. Left modulates left and right modulates right, which can widen the image.
 - **FOLLOW**: the envelope follower (set on the DYNAMICS page).
-- **SIDECHAIN**: the plugin's sidechain input, summed to mono. Silent when nothing feeds the sidechain, and in the rack.
+- **SIDECHAIN**: the sidechain input, summed to mono: in the plugin the sidechain bus, in the rack the SC L/R jacks on the back. Silent when nothing feeds it.
 
 ### 3.5 DYNAMICS page
 
@@ -201,7 +201,7 @@ Ideas:
 
 ### In the JIDAI RACK
 
-In the rack every jack in the jack row is live, plus four back-only jacks (see the appendix). Patch audio into IN L/R, CV or audio into VC 1–3 and VCA CV, and take OUT L/R wherever you like. Signals are exchanged with the other devices sample by sample, so audio-rate modulation from another device works.
+In the rack every jack in the jack row is live, plus six back-only jacks (see the appendix). Patch audio into IN L/R, CV or audio into VC 1–3 and VCA CV, and take OUT L/R wherever you like. The back-only **SIDECHAIN › SC L/R** jacks are the sidechain input. If you patch both, they are averaged to mono. They work as described above. Signals are exchanged with the other devices sample by sample, so audio-rate modulation from another device works.
 
 ---
 
@@ -218,7 +218,7 @@ ORIGAMI doesn't use MIDI notes or the host tempo. It responds the same way at an
 
 ## 6. Factory presets by bank
 
-There are 33 presets in five banks. Click the preset name in the header for a menu grouped by bank, or step through all of them with the arrows. Every preset has LEVEL COMP on and was checked to stay below full scale on test material. Presets are built into the plugin, so nothing needs installing.
+There are 33 presets in five banks. Click the preset name in the header for a menu grouped by bank, or step through all of them with the arrows. Every preset has LEVEL COMP on and was checked to stay below full scale on test material. Presets are built into the plugin and the JIDAI RACK, so nothing needs installing. In the rack, the same presets are in the preset box in ORIGAMI's jack row.
 
 The banks are voiced for the other Jidai instruments, but any preset works on any source.
 
@@ -336,7 +336,7 @@ The standalone app opens your default audio input and output. Choose devices in 
 | Factory presets | 33 in 5 banks |
 | Pages | MAIN, STAGES, DYNAMICS, SETUP |
 | UI | 75 % to 200 % scale, freely resizable |
-| Rack device | 3 U open, 1 U closed. 8 front jacks plus 4 back-only jacks. 0 or 46 samples latency, compensated by the rack. |
+| Rack device | 3 U open, 1 U closed. 8 front jacks plus 6 back-only jacks. 0 or 46 samples latency, compensated by the rack. |
 | Signal levels (rack) | Audio ±5 V (full scale). VCA CV 0–5 V. VC inputs accept audio-rate signals. |
 | Consistency | Built so that every supported system computes the same samples from the same settings |
 
@@ -368,7 +368,7 @@ ORIGAMI, JIDAI RACK and the Jidai Collection are products of Martial Systems LLC
 
 ## Appendix: Back panel patching (ORIGAMI in the JIDAI RACK)
 
-In the JIDAI RACK, ORIGAMI is a 3 U device when open and a 1 U strip when closed. Press **Tab** (or click **BACK** in the rack header) to flip the whole rack around. On the back, ORIGAMI is a 1 U rear plate that carries all 12 of its jacks.
+In the JIDAI RACK, ORIGAMI is a 3 U device when open and a 1 U strip when closed. Press **Tab** (or click **BACK** in the rack header) to flip the whole rack around. On the back, ORIGAMI is a 1 U rear plate that carries all 14 of its jacks.
 
 ![ORIGAMI open in the rack](images/origami_rack_open.png)
 
@@ -385,6 +385,7 @@ In the JIDAI RACK, ORIGAMI is a 3 U device when open and a 1 U strip when closed
 | OUTPUT | OUT L, OUT R | out | audio | |
 | HOST (NORMALS) | IN L, IN R | in | audio | Back only. Feeds IN L/R while those are unpatched. |
 | HOST (NORMALS) | OUT L, OUT R | out | audio | Back only. The same signal as OUT L/R. |
+| SIDECHAIN | SC L, SC R | in | audio | Back only. The sidechain input, averaged to mono when both are patched. |
 
 ### Colours and labels
 
