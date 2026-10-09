@@ -73,6 +73,7 @@ public:
     int jackAt (juce::Point<float> local) const;
 
     void paint (juce::Graphics&) override;
+    void mouseMove (const juce::MouseEvent&) override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
@@ -92,8 +93,31 @@ public:
     juce::PopupMenu presetMenu() const;                        // item id = preset index + 1
     void stepPreset (int delta);
 
+    // List controls (VC 1-3 SOURCE): a click steps forward, Shift-click steps back, a right-click opens the whole list
+    // (choiceMenu: item id = choice index + 1, the current one ticked; applyChoice sets it as one host gesture).
+    juce::PopupMenu choiceMenu (int param) const;
+    void applyChoice (int param, int menuId);
+    // How a list menu is shown: empty = juce::PopupMenu::showMenuAsync. Tests set it to capture the menu and answer it.
+    std::function<void (const juce::PopupMenu&, const juce::PopupMenu::Options&, std::function<void (int)>)> showMenu;
+    // STAGES page: each stage's transfer graph is also its STAGE amount control (drag up / down, double-click resets).
+    juce::Point<float> stageGraphCentre (int stage) const;   // local coordinates; (-1,-1) when not shown
+
+    // Help text (captions, hints, footnotes) the last paint drew, in design coordinates: never below kMinTextSize at
+    // 100 %, and hovering it shows it enlarged in a tooltip. Control labels keep their own sizes and are not listed.
+    static constexpr float kMinTextSize = 9.0f;
+    struct Label
+    {
+        juce::Rectangle<float> area;
+        juce::String text;
+        float size = 0.0f;
+    };
+    const std::vector<Label>& labels() const { return labels_; }
+    float smallestTextSize() const;                          // smallest help text of the last paint; 0 before the first
+    juce::String tooltipAt (juce::Point<float> local) const;
+
+
 private:
-    enum class Kind { Knob, Toggle, Selector, Button };
+    enum class Kind { Knob, Toggle, Selector, Button, Graph };   // Graph: a STAGES transfer graph bound to STAGE n
     struct Control
     {
         int param = -1;
@@ -111,6 +135,8 @@ private:
     juce::Point<float> toDesign (juce::Point<float> local) const;
     juce::Point<float> faceOrigin() const;
     juce::Rectangle<float> hitBox (const Control&) const;
+    juce::Rectangle<float> stageGraph (int stage) const;   // design coordinates of the STAGES graph (open modes)
+    void showChoiceMenu (const Control&);
     int controlAt (juce::Point<float> design) const;
     int tabAt (juce::Point<float> design) const;
     int scaleButtonAt (juce::Point<float> design) const;
@@ -141,4 +167,5 @@ private:
     int drag_ = -1;
     double dragStartNormal_ = 0.0;
     float dragStartY_ = 0.0f;
+    std::vector<Label> labels_;
 };

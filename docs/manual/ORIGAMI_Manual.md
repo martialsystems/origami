@@ -62,10 +62,14 @@ To start from a sound designed for your source, click the preset name at the top
 | Action | Result |
 |---|---|
 | Drag a knob up or down | Changes its value. Hold **Shift** for fine control (5× finer). |
-| Mouse wheel over a knob | Small steps. Hold **Shift** for even smaller steps. |
-| Double-click a knob | Returns it to its default. |
+| Drag a STAGES graph up or down | Sets that stage's STAGE amount, exactly like its knob. **Shift** is finer here too. |
+| Mouse wheel over a knob or a STAGES graph | Small steps. Hold **Shift** for even smaller steps. |
+| Double-click a knob or a STAGES graph | Returns it to its default. |
 | Click a switch or selector | Steps to the next position. |
-| Right-click a selector | Steps back one position. |
+| **Shift**-click a switch or selector | Steps back one position. |
+| Right-click a selector | Opens the whole list, with the current choice ticked. Pick any entry to jump straight to it. |
+| Hover over a knob | Shows its name and value. |
+| Hover over a caption or note | After half a second, shows it again in large type. |
 | Click a page tab | Shows that page. |
 
 Every control is a plugin parameter, so your DAW can automate it.
@@ -102,7 +106,7 @@ The drive into the folder is `1 − DEPTH + DEPTH × E`, where E is the follower
 | **WAVE** | 0–100 % | 0 % | The main fold amount. It sweeps stage 1, then stage 2, then stage 3. At 0, with the trims and EMPH also at 0, the folder is bypassed exactly, wherever SYM is set. |
 | **EMPH** | 0 to +12 dB | 0 dB | Emphasis: a high shelf (centred at 1 kHz) before the folder and its exact inverse after it. The fold bites harder on bright material while the overall tone stays balanced. |
 | **SYM** | −1 to +1 | 0 | Symmetry for all three stages. Off centre, the fold is lopsided and adds even harmonics. |
-| **STAGE 1, 2, 3** | −1 to +1 | 0 | Trims that push each stage above or below what WAVE gives it. |
+| **STAGE 1, 2, 3** | −1 to +1 | 0 | Trims that push each stage above or below what WAVE gives it. Each one is also on the STAGES page, next to its graph. |
 
 **OUTPUT box**
 
@@ -119,14 +123,17 @@ After the folder, an 8 Hz DC blocker keeps lopsided folds centred.
 
 ![STAGES page](images/origami_stages.png)
 
-One box per stage, each with a live display of that stage's transfer curve at the current WAVE, STAGE and SYM settings.
+One box per stage, each laid out the same way: the stage's own controls on either side of its graph (**STAGE n** on the left, **SYM n** on the right), and its modulation underneath (**VC n > AMT**, the VC source, **VC n > SYM**).
+
+The graph is a live display of that stage's transfer curve at the current WAVE, STAGE and SYM settings, and you can also play it like a knob: drag up or down on the graph to set the stage's amount and watch the curve fold as you go. Double-click the graph to return the stage to 0.
 
 | Control (per stage n = 1, 2, 3) | Range | Default | What it does |
 |---|---|---|---|
+| **STAGE n** (knob or graph) | −1 to +1 | 0 | How hard this stage folds compared with what WAVE gives it. This is the same control as STAGE n on the MAIN page, so turning one moves the other. |
 | **SYM n** | −1 to +1 | 0 | Extra symmetry for this stage, added to the global SYM. |
 | **VC n > AMT** | −1 to +1 | 0 | How much the stage's VC source moves its fold amount. Negative values invert. |
 | **VC n > SYM** | −1 to +1 | 0 | How much the stage's VC source moves its symmetry. |
-| **VC n source** | JACK, INPUT, FOLLOW, SIDECHAIN | JACK | Where the stage's modulation comes from. |
+| **VC n source** | JACK, INPUT, FOLLOW, SIDECHAIN | JACK | Where the stage's modulation comes from. Click for the next source, **Shift**-click for the previous one, or right-click to pick from the whole list. |
 
 The four VC sources:
 

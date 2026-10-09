@@ -8,6 +8,7 @@ using namespace origami;
 OrigamiEditor::OrigamiEditor (OrigamiProcessor& p) : juce::AudioProcessorEditor (p), proc_ (p), panel_ (*this, OrigamiPanel::Mode::Plugin)
 {
     const float startScale = proc_.uiScale;     // setResizeLimits resizes (and resized() writes uiScale)
+    setLookAndFeel (&laf_);
     addAndMakeVisible (panel_);
     panel_.uiScale = startScale;
     panel_.onScale = [this] (float s) {
@@ -20,7 +21,7 @@ OrigamiEditor::OrigamiEditor (OrigamiProcessor& p) : juce::AudioProcessorEditor 
     setSize (juce::roundToInt (OrigamiPanel::kPluginW * startScale), juce::roundToInt (OrigamiPanel::kPluginH * startScale));
 }
 
-OrigamiEditor::~OrigamiEditor() = default;
+OrigamiEditor::~OrigamiEditor() { setLookAndFeel (nullptr); }
 
 void OrigamiEditor::resized()
 {
