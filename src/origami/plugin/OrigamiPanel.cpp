@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Martial Systems LLC. All rights reserved.
 
 #include "OrigamiPanel.h"
+#include "OrigamiUiLogic.h"
 
 #include <cmath>
 
@@ -22,13 +23,36 @@ juce::Font font (float size, bool bold = true, float kerning = 0.0f)
     return juce::Font (juce::FontOptions {}.withPointHeight (size).withStyle (bold ? "Bold" : "Regular")).withExtraKerningFactor (kerning);
 }
 
+// The panel being painted collects its help text here (for the hover tooltips and the text size check).
+std::vector<OrigamiPanel::Label>* gDrawn = nullptr;
+
+void note (juce::Rectangle<float> area, const juce::String& s, float size)
+{
+    if (gDrawn != nullptr && s.trim().isNotEmpty())
+        gDrawn->push_back ({ area, s, size });
+}
+
 // SVG-style text: x is the left edge, centre or right edge; y is the baseline.
 void text (juce::Graphics& g, float x, float y, const juce::String& s, float size, juce::Justification j = juce::Justification::horizontallyCentred,
            juce::Colour c = kInk, bool bold = true, float kerning = 0.05f)
 {
+    const auto f = font (size, bold, kerning);
     g.setColour (c);
-    g.setFont (font (size, bold, kerning));
+    g.setFont (f);
     g.drawSingleLineText (s, juce::roundToInt (x), juce::roundToInt (y), j);
+}
+
+// Help text (captions, hints, footnotes): never below the minimum size, and hovering it shows it enlarged.
+// Control labels (knobs, jacks, buttons, switches) use text() at their own sizes.
+void help (juce::Graphics& g, float x, float y, const juce::String& s, float size, juce::Justification j = juce::Justification::horizontallyCentred,
+           juce::Colour c = kDim, bool bold = true)
+{
+    size = juce::jmax (OrigamiPanel::kMinTextSize, size);
+    text (g, x, y, s, size, j, c, bold);
+    const auto f = font (size, bold, 0.05f);
+    const float w = juce::GlyphArrangement::getStringWidth (f, s);
+    const float left = j.testFlags (juce::Justification::right) ? x - w : (j.testFlags (juce::Justification::left) ? x : x - w * 0.5f);
+    note ({ left - 2.0f, y - f.getAscent() - 2.0f, w + 4.0f, f.getHeight() + 4.0f }, s, size);
 }
 
 void box (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& title)
@@ -214,14 +238,22 @@ void OrigamiPanel::addFaceControls (juce::Point<float> o)
                 add (kStage1 + i, Kind::Knob, 418.0f + 150.0f * (float) i, 198, 15, "STAGE " + juce::String (i + 1));
             break;
         case Page::Stages:
+            // Each box, mirror-symmetric about its centre line: STAGE n | graph | SYM n over VC > AMT | source | VC > SYM.
+            // STAGE n is the MAIN page's parameter (ui::stageAmountParam), shown here as a knob and as the graph.
             for (int i = 0; i < 3; ++i)
             {
                 const float bx = 14.0f + 374.0f * (float) i;
                 const juce::String n (i + 1);
-                add (kSym1 + i, Kind::Knob, bx + 70, 170, 16, "SYM " + n);
-                add (kVc1Amt + i, Kind::Knob, bx + 180, 170, 16, "VC " + n + " > AMT");
-                add (kVc1Sym + i, Kind::Knob, bx + 290, 170, 16, "VC " + n + " > SYM");
-                add (kVc1Src + i, Kind::Selector, bx + 180, 222, 70, "VC " + n);
+                add (ui::stageAmountParam (i), Kind::Knob, bx + 52, 80, 18, "STAGE " + n);
+                add (kSym1 + i, Kind::Knob, bx + 308, 80, 18, "SYM " + n);
+                add (kVc1Amt + i, Kind::Knob, bx + 70, 184, 16, "VC " + n + " > AMT");
+                add (kVc1Sym + i, Kind::Knob, bx + 290, 184, 16, "VC " + n + " > SYM");
+                add (kVc1Src + i, Kind::Selector, bx + 180, 184, 70, "VC " + n);
+            }
+            for (int i = 0; i < 3; ++i)
+            {
+                const auto gr = stageGraph (i) - o;
+                add (ui::stageAmountParam (i), Kind::Graph, gr.getCentreX(), gr.getCentreY(), gr.getWidth() * 0.5f, "STAGE " + juce::String (i + 1));
             }
             break;
         case Page::Dynamics:
@@ -247,8 +279,22 @@ juce::Rectangle<float> OrigamiPanel::hitBox (const Control& c) const
         case Kind::Toggle: return juce::Rectangle<float> (c.c.x - 24, c.c.y - 10, 48, 20);
         case Kind::Selector: return juce::Rectangle<float> (c.c.x - c.r, c.c.y - 9, 2 * c.r, 18);
         case Kind::Button: return juce::Rectangle<float> (c.c.x - c.r, c.c.y - 11, 2 * c.r, 22);
+        case Kind::Graph: return stageGraph (c.param - kStage1);
     }
     return {};
+}
+
+juce::Rectangle<float> OrigamiPanel::stageGraph (int stage) const
+{
+    return { faceOrigin().x + 14.0f + 374.0f * (float) stage + 105.0f, faceOrigin().y + 28.0f, 150.0f, 104.0f };
+}
+
+juce::Point<float> OrigamiPanel::stageGraphCentre (int stage) const
+{
+    for (auto& c : controls_)
+        if (c.kind == Kind::Graph && c.param == ui::stageAmountParam (stage))
+            return toLocal (c.c);
+    return { -1.0f, -1.0f };
 }
 
 int OrigamiPanel::controlAt (juce::Point<float> d) const
@@ -326,7 +372,7 @@ void OrigamiPanel::mouseDown (const juce::MouseEvent& e)
     if (i < 0) return;
     const auto& c = controls_[(size_t) i];
     const auto& info = paramInfo (c.param);
-    if (c.kind == Kind::Knob)
+    if (c.kind == Kind::Knob || c.kind == Kind::Graph)
     {
         drag_ = i;
         dragStartY_ = e.position.y;
@@ -334,21 +380,31 @@ void OrigamiPanel::mouseDown (const juce::MouseEvent& e)
         access_.gesture (c.param, true);
         return;
     }
-    // Switches step through their positions (a right click steps back on selectors).
+    // List controls: a right-click opens the whole list. Switches and lists step on a click (Shift-click: back).
+    if (c.kind == Kind::Selector && e.mods.isPopupMenu())
+    {
+        showChoiceMenu (c);
+        return;
+    }
     const int n = juce::jmax (2, info.choices);
-    int v = (int) std::lround (access_.get (c.param));
-    v = e.mods.isPopupMenu() ? (v + n - 1) % n : (v + 1) % n;
+    const int v = ui::stepChoice ((int) std::lround (access_.get (c.param)), n, e.mods.isShiftDown() || e.mods.isPopupMenu());
     access_.gesture (c.param, true);
     access_.set (c.param, (double) v);
     access_.gesture (c.param, false);
     repaint();
 }
 
+void OrigamiPanel::mouseMove (const juce::MouseEvent& e)
+{
+    const int i = controlAt (toDesign (e.position));
+    setMouseCursor (i >= 0 && controls_[(size_t) i].kind == Kind::Graph ? juce::MouseCursor::UpDownResizeCursor : juce::MouseCursor::NormalCursor);
+}
+
 void OrigamiPanel::mouseDrag (const juce::MouseEvent& e)
 {
     if (drag_ < 0) return;
-    const float px = 200.0f * scale() * (e.mods.isShiftDown() ? 5.0f : 1.0f);
-    setNormal (controls_[(size_t) drag_].param, dragStartNormal_ + (double) ((dragStartY_ - e.position.y) / px));
+    setNormal (controls_[(size_t) drag_].param,
+               ui::dragToNormal (dragStartNormal_, (double) (dragStartY_ - e.position.y), (double) scale(), e.mods.isShiftDown()));
 }
 
 void OrigamiPanel::mouseUp (const juce::MouseEvent&)
@@ -362,7 +418,7 @@ void OrigamiPanel::mouseUp (const juce::MouseEvent&)
 void OrigamiPanel::mouseDoubleClick (const juce::MouseEvent& e)
 {
     const int i = controlAt (toDesign (e.position));
-    if (i < 0 || controls_[(size_t) i].kind != Kind::Knob) return;
+    if (i < 0 || (controls_[(size_t) i].kind != Kind::Knob && controls_[(size_t) i].kind != Kind::Graph)) return;
     const int p = controls_[(size_t) i].param;
     access_.gesture (p, true);
     access_.set (p, paramInfo (p).def);
@@ -373,16 +429,58 @@ void OrigamiPanel::mouseDoubleClick (const juce::MouseEvent& e)
 void OrigamiPanel::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
     const int i = controlAt (toDesign (e.position));
-    if (i < 0 || controls_[(size_t) i].kind != Kind::Knob) return;
+    if (i < 0 || (controls_[(size_t) i].kind != Kind::Knob && controls_[(size_t) i].kind != Kind::Graph)) return;
     const int p = controls_[(size_t) i].param;
     access_.gesture (p, true);
     setNormal (p, normal (p) + (w.deltaY > 0 ? 1.0 : -1.0) * (e.mods.isShiftDown() ? 0.004 : 0.02));
     access_.gesture (p, false);
 }
 
-juce::String OrigamiPanel::getTooltip()
+juce::PopupMenu OrigamiPanel::choiceMenu (int param) const
 {
-    const auto local = getMouseXYRelative().toFloat();
+    juce::PopupMenu menu;
+    const auto list = ui::choiceList (param, access_.get (param));
+    for (size_t k = 0; k < list.names.size(); ++k)
+        menu.addItem ((int) k + 1, juce::String (list.names[k]), true, (int) k == list.current);
+    return menu;
+}
+
+void OrigamiPanel::applyChoice (int param, int menuId)
+{
+    const int choice = ui::choiceFromMenuResult (param, menuId);
+    if (choice < 0) return;
+    access_.gesture (param, true);
+    access_.set (param, (double) choice);
+    access_.gesture (param, false);
+    repaint();
+}
+
+void OrigamiPanel::showChoiceMenu (const Control& c)
+{
+    juce::Component::SafePointer<OrigamiPanel> safe (this);
+    const int param = c.param;
+    const auto area = hitBox (c);
+    const auto options = juce::PopupMenu::Options().withTargetComponent (this)
+                             .withTargetScreenArea (localAreaToGlobal (juce::Rectangle<float> (toLocal (area.getTopLeft()), toLocal (area.getBottomRight())).toNearestInt()));
+    std::function<void (int)> done = [safe, param] (int id) { if (safe != nullptr) safe->applyChoice (param, id); };
+    if (showMenu)
+        showMenu (choiceMenu (param), options, std::move (done));
+    else
+        choiceMenu (param).showMenuAsync (options, std::move (done));
+}
+
+juce::String OrigamiPanel::getTooltip() { return tooltipAt (getMouseXYRelative().toFloat()); }
+
+float OrigamiPanel::smallestTextSize() const
+{
+    float m = 0.0f;
+    for (auto& l : labels_)
+        m = m <= 0.0f ? l.size : juce::jmin (m, l.size);
+    return m;
+}
+
+juce::String OrigamiPanel::tooltipAt (juce::Point<float> local) const
+{
     if (presetPartAt (toDesign (local)) != PresetPart::None)
         return juce::String (juce::CharPointer_UTF8 ("FACTORY PRESETS  \xc2\xb7  arrows step through all banks, click the name for the menu (INIT, RONIN, SHOGUN, BUSHIDO, GENERIC)"));
     if (const int j = jackAt (local); j >= 0)
@@ -400,7 +498,20 @@ juce::String OrigamiPanel::getTooltip()
     }
     const int i = controlAt (toDesign (local));
     if (i >= 0)
-        return valueText (controls_[(size_t) i].param, access_.get (controls_[(size_t) i].param));
+    {
+        const auto& c = controls_[(size_t) i];
+        auto s = valueText (c.param, access_.get (c.param));
+        if (c.kind == Kind::Graph)
+            s << juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  drag up / down to set it (Shift: fine), double-click resets"));
+        else if (c.kind == Kind::Selector)
+            s << juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  click: next, Shift-click: previous, right-click: the whole list"));
+        return s;
+    }
+    // Help text: itself, enlarged.
+    const auto d = toDesign (local);
+    for (auto it = labels_.rbegin(); it != labels_.rend(); ++it)
+        if (it->area.contains (d))
+            return it->text;
     return {};
 }
 
@@ -415,6 +526,8 @@ juce::String OrigamiPanel::statusText() const
 void OrigamiPanel::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colour (0xff0a0a0c));
+    labels_.clear();
+    gDrawn = &labels_;
     g.saveState();
     g.addTransform (juce::AffineTransform::scale (scale()).translated (origin()));
     if (mode_ == Mode::RackClosed)
@@ -431,7 +544,8 @@ void OrigamiPanel::paint (juce::Graphics& g)
         const auto& c = controls_[(size_t) drag_];
         const auto s = valueText (c.param, access_.get (c.param));
         const float w = juce::GlyphArrangement::getStringWidth (font (9.0f), s) + 14.0f;
-        const juce::Rectangle<float> r (c.c.x - w * 0.5f, c.c.y - c.r - 30.0f, w, 18.0f);
+        const float top = c.kind == Kind::Graph ? hitBox (c).getY() + 4.0f : c.c.y - c.r - 30.0f;
+        const juce::Rectangle<float> r (c.c.x - w * 0.5f, top, w, 18.0f);
         g.setColour (juce::Colour (0xf00b0b14));
         g.fillRoundedRectangle (r, 3.0f);
         g.setColour (juce::Colour (0xff33354a));
@@ -439,6 +553,7 @@ void OrigamiPanel::paint (juce::Graphics& g)
         text (g, r.getCentreX(), r.getBottom() - 5.0f, s, 9.0f, juce::Justification::horizontallyCentred, kInd);
     }
     g.restoreState();
+    gDrawn = nullptr;
 }
 
 void OrigamiPanel::paintPluginChrome (juce::Graphics& g)
@@ -618,14 +733,14 @@ void OrigamiPanel::paintMain (juce::Graphics& g, juce::Point<float> o)
     box (g, R (14, 16, 250, 224), "INPUT");
     box (g, R (kFaceW - 264, 16, 250, 224), "OUTPUT");
     box (g, R (278, 16, kFaceW - 556, 224), "WAVE");
-    text (g, o.x + 139, o.y + 186, "pre-fold VCA: follower or CV sets the drive", 7, juce::Justification::horizontallyCentred, kDim);
+    help (g, o.x + 139, o.y + 186, "pre-fold VCA: follower or CV sets the drive", 9, juce::Justification::horizontallyCentred, kDim);
     paintMeter (g, R (44, 198, 190, 6), juce::jmax (access_.inPeak (0), access_.inPeak (1)));
     juce::Rectangle<float> fr = R (44, 209, 190, 4);
     g.setColour (juce::Colour (0xff0b0b10)); g.fillRoundedRectangle (fr, 2.0f);
     g.setColour (kAcc.withAlpha (0.7f)); g.fillRoundedRectangle (fr.withWidth (190.0f * juce::jlimit (0.0f, 1.0f, access_.follower())), 2.0f);
     text (g, o.x + 139, o.y + 228, "INPUT / FOLLOWER", 7, juce::Justification::horizontallyCentred, kDim);
 
-    text (g, o.x + 997, o.y + 186, juce::String (juce::CharPointer_UTF8 ("DC block 8 Hz \xc2\xb7 dry aligned to wet")), 7, juce::Justification::horizontallyCentred, kDim);
+    help (g, o.x + 997, o.y + 186, juce::String (juce::CharPointer_UTF8 ("DC block 8 Hz \xc2\xb7 dry aligned to wet")), 9, juce::Justification::horizontallyCentred, kDim);
     paintMeter (g, R (kFaceW - 234, 198, 190, 6), access_.outPeak (0));
     paintMeter (g, R (kFaceW - 234, 208, 190, 6), access_.outPeak (1));
     text (g, o.x + 997, o.y + 228, "OUTPUT", 7, juce::Justification::horizontallyCentred, kDim);
@@ -633,7 +748,7 @@ void OrigamiPanel::paintMain (juce::Graphics& g, juce::Point<float> o)
     text (g, o.x + kFaceW - 30, o.y + 225, "OVER", 6.5f, juce::Justification::horizontallyCentred, kDim);
 
     text (g, o.x + 568, o.y + 150, "WAVE", 11, juce::Justification::horizontallyCentred, kInk, true, 0.3f);
-    text (g, o.x + 568, o.y + 163, juce::String (juce::CharPointer_UTF8 ("0 = true bypass \xc2\xb7 sweeps stages 1 \xe2\x86\x92 2 \xe2\x86\x92 3")), 7,
+    help (g, o.x + 568, o.y + 163, juce::String (juce::CharPointer_UTF8 ("0 = true bypass \xc2\xb7 sweeps stages 1 \xe2\x86\x92 2 \xe2\x86\x92 3")), 9,
           juce::Justification::horizontallyCentred, kDim);
 }
 
@@ -643,11 +758,13 @@ void OrigamiPanel::paintStages (juce::Graphics& g, juce::Point<float> o)
     {
         const float bx = o.x + 14.0f + 374.0f * (float) i;
         box (g, { bx, o.y + 16, 360, 224 }, "STAGE " + juce::String (i + 1));
-        const juce::Rectangle<float> v (bx + 105, o.y + 28, 150, 104);
+        const juce::Rectangle<float> v = stageGraph (i);
         g.setColour (juce::Colour (0xff0b0b14));
         g.fillRoundedRectangle (v, 2.0f);
-        g.setColour (juce::Colour (0xff33354a));
+        const bool held = drag_ >= 0 && controls_[(size_t) drag_].kind == Kind::Graph && controls_[(size_t) drag_].param == ui::stageAmountParam (i);
+        g.setColour (held ? kInd.withAlpha (0.8f) : juce::Colour (0xff33354a));
         g.drawRoundedRectangle (v, 2.0f, 1.0f);
+        g.setColour (juce::Colour (0xff33354a));
         g.drawLine (v.getCentreX(), v.getY(), v.getCentreX(), v.getBottom(), 0.6f);
         g.drawLine (v.getX(), v.getCentreY(), v.getRight(), v.getCentreY(), 0.6f);
         // Identity (dashed) and the live transfer curve, in shaper units (1 = 5 V): x +-1.25, y +-2.1.
@@ -672,11 +789,13 @@ void OrigamiPanel::paintStages (juce::Graphics& g, juce::Point<float> o)
         g.setColour (kInd);
         g.strokePath (curve, juce::PathStrokeType (1.6f));
         g.restoreState();
-        text (g, v.getCentreX(), v.getBottom() + 12, "transfer at current WAVE / STAGE / SYM", 6.5f, juce::Justification::horizontallyCentred, kDim, false);
+        help (g, v.getCentreX(), v.getBottom() + 13, juce::String (juce::CharPointer_UTF8 ("drag to set STAGE ")) + juce::String (i + 1)
+                  + juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 double-click resets")), 9, juce::Justification::horizontallyCentred, kDim, false);
+        help (g, bx + 180, o.y + 213, "right-click: the whole list", 9, juce::Justification::horizontallyCentred, kDim, false);
     }
-    text (g, o.x + kFaceW * 0.5f, o.y + 250, juce::String (juce::CharPointer_UTF8 (mode_ == Mode::Plugin ? "VC source: a patched VC jack wins \xc2\xb7 INPUT = the signal itself \xc2\xb7 FOLLOW = envelope \xc2\xb7 SIDECHAIN = plugin sidechain"
+    help (g, o.x + kFaceW * 0.5f, o.y + 250, juce::String (juce::CharPointer_UTF8 (mode_ == Mode::Plugin ? "VC source: a patched VC jack wins \xc2\xb7 INPUT = the signal itself \xc2\xb7 FOLLOW = envelope \xc2\xb7 SIDECHAIN = plugin sidechain"
                                                                  : "VC source: a patched VC jack wins \xc2\xb7 INPUT = the signal itself \xc2\xb7 FOLLOW = envelope \xc2\xb7 SIDECHAIN = SC jacks (back)")),
-          6.5f, juce::Justification::horizontallyCentred, kDim, false);
+          9, juce::Justification::horizontallyCentred, kDim, false);
 }
 
 void OrigamiPanel::paintDynamics (juce::Graphics& g, juce::Point<float> o)
@@ -688,9 +807,9 @@ void OrigamiPanel::paintDynamics (juce::Graphics& g, juce::Point<float> o)
     g.setColour (juce::Colour (0xff2a2a33)); g.drawRoundedRectangle (m, 4.0f, 1.0f);
     g.setColour (kInd.withAlpha (0.8f));
     g.fillRoundedRectangle (m.reduced (1.0f).withWidth ((m.getWidth() - 2.0f) * juce::jlimit (0.0f, 1.0f, access_.follower())), 3.0f);
-    text (g, o.x + 287, o.y + 204, juce::String (juce::CharPointer_UTF8 ("stereo-linked peak follower \xc2\xb7 1.0 = 5 V")), 7, juce::Justification::horizontallyCentred, kDim);
-    text (g, o.x + 848, o.y + 204, juce::String (juce::CharPointer_UTF8 ("drive = 1 \xe2\x88\x92 DEPTH + DEPTH \xc2\xb7 E   (EXP: E squared)")), 7, juce::Justification::horizontallyCentred, kDim);
-    text (g, o.x + 848, o.y + 218, juce::String (juce::CharPointer_UTF8 ("E = follower, or VCA CV / 5 V \xc3\x97 CV SCALE")), 7, juce::Justification::horizontallyCentred, kDim);
+    help (g, o.x + 287, o.y + 204, juce::String (juce::CharPointer_UTF8 ("stereo-linked peak follower \xc2\xb7 1.0 = 5 V")), 9, juce::Justification::horizontallyCentred, kDim);
+    help (g, o.x + 848, o.y + 204, juce::String (juce::CharPointer_UTF8 ("drive = 1 \xe2\x88\x92 DEPTH + DEPTH \xc2\xb7 E   (EXP: E squared)")), 9, juce::Justification::horizontallyCentred, kDim);
+    help (g, o.x + 848, o.y + 218, juce::String (juce::CharPointer_UTF8 ("E = follower, or VCA CV / 5 V \xc3\x97 CV SCALE")), 9, juce::Justification::horizontallyCentred, kDim);
     text (g, o.x + 848, o.y + 140, "VCA SOURCE", 7.5f, juce::Justification::horizontallyCentred, kDim);
     text (g, o.x + 958, o.y + 125, "VCA LAW", 8.5f, juce::Justification::horizontallyCentred);
 }
@@ -708,8 +827,8 @@ void OrigamiPanel::paintSetup (juce::Graphics& g, juce::Point<float> o)
     g.setColour (kInd);
     g.setFont (juce::Font (juce::FontOptions {}.withName (juce::Font::getDefaultMonospacedFontName()).withPointHeight (10.0f)));
     g.drawText (statusText() + " smp  " + ms + " ms", lcd, juce::Justification::centred);
-    text (g, o.x + 194, o.y + 168, juce::String (juce::CharPointer_UTF8 ("2\xc3\x97: 93-tap half-band up + down \xc2\xb7 dry delayed to match")), 7, juce::Justification::horizontallyCentred, kDim);
-    text (g, o.x + 194, o.y + 182, "default OFF; the latency is reported to the host / rack", 7, juce::Justification::horizontallyCentred, kDim);
+    help (g, o.x + 194, o.y + 168, juce::String (juce::CharPointer_UTF8 ("2\xc3\x97: 93-tap half-band up + down \xc2\xb7 dry delayed to match")), 9, juce::Justification::horizontallyCentred, kDim);
+    help (g, o.x + 194, o.y + 182, "default OFF; the latency is reported to the host / rack", 9, juce::Justification::horizontallyCentred, kDim);
 
     if (mode_ == Mode::Plugin)
     {
@@ -723,19 +842,19 @@ void OrigamiPanel::paintSetup (juce::Graphics& g, juce::Point<float> o)
             text (g, b.getCentreX(), b.getBottom() - 7.0f, juce::String (juce::roundToInt (kScales[i] * 100.0f)) + " %", 8, juce::Justification::horizontallyCentred,
                   on ? juce::Colour (0xff0b0b12) : kInk);
         }
-        text (g, o.x + 568, o.y + 118, juce::String (juce::CharPointer_UTF8 ("900 \xc3\x97 270 to 2400 \xc3\x97 720 \xc2\xb7 drag the corner too")), 7, juce::Justification::horizontallyCentred, kDim);
+        help (g, o.x + 568, o.y + 118, juce::String (juce::CharPointer_UTF8 ("900 \xc3\x97 270 to 2400 \xc3\x97 720 \xc2\xb7 drag the corner too")), 9, juce::Justification::horizontallyCentred, kDim);
         text (g, o.x + 568, o.y + 168, juce::String (juce::CharPointer_UTF8 ("CABLE COLOUR \xc2\xb7 BY ROLE")), 8.5f);
-        text (g, o.x + 568, o.y + 182, "set in the rack (ring colours follow the cable standard)", 7, juce::Justification::horizontallyCentred, kDim);
+        help (g, o.x + 568, o.y + 182, "set in the rack (ring colours follow the cable standard)", 9, juce::Justification::horizontallyCentred, kDim);
     }
     else
     {
-        text (g, o.x + 568, o.y + 100, "UI SCALE follows the rack", 8.5f);
-        text (g, o.x + 568, o.y + 150, juce::String (juce::CharPointer_UTF8 ("CABLE COLOUR \xc2\xb7 rack header (BY ROLE / MANUAL)")), 8.5f);
+        help (g, o.x + 568, o.y + 100, "UI SCALE follows the rack", 9.5f, juce::Justification::horizontallyCentred, kInk);
+        help (g, o.x + 568, o.y + 150, juce::String (juce::CharPointer_UTF8 ("CABLE COLOUR \xc2\xb7 rack header (BY ROLE / MANUAL)")), 9.5f, juce::Justification::horizontallyCentred, kInk);
     }
     text (g, o.x + 870, o.y + 84, "LEVEL COMP", 8.5f, juce::Justification::right);
     text (g, o.x + 870, o.y + 144, "BYPASS", 8.5f, juce::Justification::right);
-    text (g, o.x + 942, o.y + 182, juce::String (juce::CharPointer_UTF8 ("LEVEL COMP: 20 ms RMS, \xc2\xb1" "12 dB, 5 ms smoothing")), 7, juce::Justification::horizontallyCentred, kDim);
-    text (g, o.x + 942, o.y + 196, "BYPASS passes the dry signal bit-exact", 7, juce::Justification::horizontallyCentred, kDim);
+    help (g, o.x + 942, o.y + 182, juce::String (juce::CharPointer_UTF8 ("LEVEL COMP: 20 ms RMS, \xc2\xb1" "12 dB, 5 ms smoothing")), 9, juce::Justification::horizontallyCentred, kDim);
+    help (g, o.x + 942, o.y + 196, "BYPASS passes the dry signal bit-exact", 9, juce::Justification::horizontallyCentred, kDim);
 }
 
 void OrigamiPanel::paintJackRow (juce::Graphics& g, juce::Point<float> o)
@@ -766,7 +885,7 @@ void OrigamiPanel::paintJackRow (juce::Graphics& g, juce::Point<float> o)
             text (g, cx, cy + 25, label, 8);
         text (g, cx + 14, cy - 9, juce::String (juce::CharPointer_UTF8 (jackIsAudio (j) ? "\xe2\x88\xbf" : "\xe2\x89\x88")), 8, juce::Justification::left, role, true, 0.0f);
     }
-    text (g, o.x + kFaceW * 0.5f, o.y + 290, juce::String (juce::CharPointer_UTF8 ("VC 1\xe2\x80\x93" "3 accept audio rate (unsmoothed) \xc2\xb7 ring = cable role colour")), 7,
+    help (g, o.x + kFaceW * 0.5f, o.y + 290, juce::String (juce::CharPointer_UTF8 ("VC 1\xe2\x80\x93" "3: audio rate OK \xc2\xb7 ring = cable role")), 9,
           juce::Justification::horizontallyCentred, kDim);
 }
 
@@ -780,7 +899,7 @@ void OrigamiPanel::paintClosed (juce::Graphics& g)
     text (g, 30, 30, "ORIGAMI", 12, juce::Justification::left, kInk, true, 0.3f);
     text (g, 30, 46, "TRIPLE WAVE SHAPER", 7.5f, juce::Justification::left, kDim, true, 0.15f);
     text (g, kFaceW - 30, 30, statusText(), 8, juce::Justification::right, kDim);
-    text (g, kFaceW - 30, 46, juce::String (juce::CharPointer_UTF8 ("CLOSED \xc2\xb7 jacks on the back")), 7.5f, juce::Justification::right, kDim, false);
+    help (g, kFaceW - 30, 46, juce::String (juce::CharPointer_UTF8 ("CLOSED \xc2\xb7 jacks on the back")), 9, juce::Justification::right, kDim, false);
     // IN meter | BYPASS | MIX  [WAVE]  LEVEL | OVER | OUT meter  (mirror-symmetric)
     text (g, 105, 54, "IN L / R", 7, juce::Justification::horizontallyCentred, kDim);
     text (g, kFaceW - 105, 54, "OUT L / R", 7, juce::Justification::horizontallyCentred, kDim);
@@ -860,6 +979,8 @@ void OrigamiPanel::paintControl (juce::Graphics& g, const Control& c)
             g.drawText (c.label + ": " + info.choiceNames[idx], b, juce::Justification::centred);
             break;
         }
+        case Kind::Graph:
+            break;   // drawn by paintStages
         case Kind::Button:
         {
             const juce::Rectangle<float> b (cx - r, cy - 11, 2 * r, 22);

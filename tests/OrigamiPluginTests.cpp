@@ -7,6 +7,7 @@
 #include "origami/plugin/OrigamiPresets.h"
 #include "origami/plugin/OrigamiProcessor.h"
 #include "origami/plugin/OrigamiState.h"
+#include "origami/plugin/OrigamiUiLogic.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -46,6 +47,12 @@ juce::MouseEvent mouse (juce::Component& c, juce::Point<float> p, juce::Point<fl
     auto source = juce::Desktop::getInstance().getMainMouseSource();
     return juce::MouseEvent (source, p, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
                              &c, &c, juce::Time::getCurrentTime(), down, juce::Time::getCurrentTime(), 1, dragged);
+}
+
+juce::MouseEvent mouseWith (juce::Component& c, juce::Point<float> p, juce::Point<float> down, bool dragged, juce::ModifierKeys mods)
+{
+    auto source = juce::Desktop::getInstance().getMainMouseSource();
+    return juce::MouseEvent (source, p, mods, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, &c, &c, juce::Time::getCurrentTime(), down, juce::Time::getCurrentTime(), 1, dragged);
 }
 
 void run (OrigamiProcessor& p, juce::AudioBuffer<float>& b)
@@ -299,6 +306,230 @@ void testEditor (const juce::File& outDir)
     }
 }
 
+// The interaction rules as plain functions (OrigamiUiLogic.h).
+void testUiLogic()
+{
+    using namespace origami::ui;
+    check (dragToNormal (0.5, 100.0, 1.0, false) == 1.0 && dragToNormal (0.5, 50.0, 1.0, false) == 0.75 && dragToNormal (0.5, -300.0, 1.0, false) == 0.0,
+           "drag: 200 px is the whole range, clamped at both ends");
+    check (std::abs (dragToNormal (0.5, 100.0, 1.0, true) - 0.6) < 1e-12 && std::abs (dragToNormal (0.5, 100.0, 2.0, false) - 0.75) < 1e-12,
+           "drag: Shift is 5x finer, and the travel scales with the UI");
+    check (stepChoice (0, 4, false) == 1 && stepChoice (3, 4, false) == 0 && stepChoice (0, 4, true) == 3 && stepChoice (2, 4, true) == 1,
+           "list step: click forward, Shift-click back, wrapping both ways");
+    check (stepChoice (9, 4, false) == 0 && stepChoice (-3, 4, true) == 3 && stepChoice (0, 0, false) == 0, "list step: out-of-range input is clamped first");
+    const auto l = choiceList (kVc2Src, 2.0);
+    check (l.names == std::vector<std::string> ({ "JACK", "INPUT", "FOLLOW", "SIDECHAIN" }) && l.current == 2, "VC SOURCE list: every source in order, current ticked");
+    check (choiceList (kWave, 0.5).names.empty(), "a continuous parameter has no list");
+    check (choiceFromMenuResult (kVc1Src, 0) == -1 && choiceFromMenuResult (kVc1Src, 1) == 0 && choiceFromMenuResult (kVc1Src, 4) == 3
+               && choiceFromMenuResult (kVc1Src, 5) == -1, "menu result: id - 1, dismissed or out of range = no change");
+    check (stageAmountParam (0) == kStage1 && stageAmountParam (2) == kStage3 && kParamCount == 30,
+           "STAGES edits the MAIN STAGE 1-3 parameters (no new parameter: still 30)");
+}
+
+// STAGES page editing and the right-click list, on the plugin face and the rack's open face.
+void testStagesAndLists()
+{
+    struct Plain : OrigamiPanel::Access
+    {
+        double v[kParamCount] {};
+        int begins = 0, ends = 0, lastGesture = -1;
+        Plain() { for (int i = 0; i < kParamCount; ++i) v[i] = paramInfo (i).def; }
+        double get (int p) const override { return v[p]; }
+        void set (int p, double x) override { v[p] = clampParam (p, x); }
+        void gesture (int p, bool begin) override { (begin ? begins : ends)++; lastGesture = p; }
+        float inPeak (int) const override { return 0.0f; }
+        float outPeak (int) const override { return 0.0f; }
+        float follower() const override { return 0.0f; }
+        bool over() const override { return false; }
+        int latencySamples() const override { return 0; }
+        double stageCurve (int s, double x) const override { return OrigamiCore::stageCurve (v, s, x); }
+    };
+    const juce::ModifierKeys left (juce::ModifierKeys::leftButtonModifier), shift (juce::ModifierKeys::leftButtonModifier | juce::ModifierKeys::shiftModifier),
+                            right (juce::ModifierKeys::rightButtonModifier);
+    for (auto mode : { OrigamiPanel::Mode::Plugin, OrigamiPanel::Mode::RackOpen })
+    {
+        const juce::String tag = mode == OrigamiPanel::Mode::Plugin ? "plugin: " : "rack: ";
+        Plain a;
+        auto panel = std::make_unique<OrigamiPanel> (a, mode);
+        auto& pn = *panel;
+        const auto ds = pn.designSize();
+        pn.setSize ((int) ds.x, (int) ds.y);
+        pn.setPage (Page::Stages);
+        // Menus are captured, not opened (no window system needed); the callback is answered by the test.
+        int menusShown = 0;
+        std::function<void (int)> pendingMenu;
+        pn.showMenu = [&menusShown, &pendingMenu] (const juce::PopupMenu&, const juce::PopupMenu::Options&, std::function<void (int)> done)
+        {
+            ++menusShown;
+            pendingMenu = std::move (done);
+        };
+
+        // Every box carries its STAGE knob and a graph; the layout of the three boxes is identical and mirror-symmetric.
+        bool shown = true, mirrored = true, same = true;
+        for (int i = 0; i < 3; ++i)
+        {
+            const auto g = pn.stageGraphCentre (i), st = pn.controlCentre (kStage1 + i), sy = pn.controlCentre (kSym1 + i);
+            const auto am = pn.controlCentre (kVc1Amt + i), vs = pn.controlCentre (kVc1Sym + i), src = pn.controlCentre (kVc1Src + i);
+            shown = shown && g.x >= 0.0f && st.x >= 0.0f && sy.x >= 0.0f && am.x >= 0.0f && vs.x >= 0.0f && src.x >= 0.0f;
+            mirrored = mirrored && std::abs ((st.x + sy.x) - 2.0f * g.x) < 0.01f && std::abs (st.y - sy.y) < 0.01f && std::abs (st.y - g.y) < 0.01f
+                       && std::abs ((am.x + vs.x) - 2.0f * src.x) < 0.01f && std::abs (src.x - g.x) < 0.01f && std::abs (am.y - src.y) < 0.01f;
+            const float dx = 374.0f * (float) i;
+            same = same && std::abs (g.x - pn.stageGraphCentre (0).x - dx) < 0.01f && std::abs (st.x - pn.controlCentre (kStage1).x - dx) < 0.01f
+                   && std::abs (am.x - pn.controlCentre (kVc1Amt).x - dx) < 0.01f && std::abs (src.y - pn.controlCentre (kVc1Src).y) < 0.01f;
+        }
+        check (shown, tag + "STAGES shows STAGE n, SYM n, VC > AMT, VC > SYM, the VC source and an editable graph in every box");
+        check (mirrored && same, tag + "each box is mirror-symmetric (STAGE | graph | SYM over AMT | source | SYM) and all three are identical");
+
+        // The STAGE knob on STAGES is the MAIN parameter: drag it, and MAIN shows the same value.
+        const auto k2 = pn.controlCentre (kStage2);
+        pn.mouseDown (mouseWith (pn, k2, k2, false, left));
+        pn.mouseDrag (mouseWith (pn, k2 - juce::Point<float> (0, 50), k2, true, left));
+        pn.mouseUp (mouseWith (pn, k2 - juce::Point<float> (0, 50), k2, true, left));
+        check (std::abs (a.v[kStage2] - 0.5) < 1e-9 && a.begins == 1 && a.ends == 1 && a.lastGesture == kStage2,
+               tag + "STAGE 2 knob on STAGES: 50 px up = +0.5, one gesture, got " + juce::String (a.v[kStage2]));
+        pn.setPage (Page::Main);
+        check (pn.controlCentre (kStage2).x >= 0.0f && pn.stageGraphCentre (1).x < 0.0f, tag + "MAIN still has STAGE 2 (the same parameter); graphs only on STAGES");
+        pn.setPage (Page::Stages);
+
+        // The graph is a control: a vertical drag sets STAGE n, Shift is fine, double-click resets, and the curve follows.
+        const auto g1 = pn.stageGraphCentre (0);
+        const double before = a.stageCurve (0, 0.9);
+        a.v[kWave] = 0.3;
+        const double atWave = a.stageCurve (0, 0.9);
+        pn.mouseDown (mouseWith (pn, g1, g1, false, left));
+        for (int s = 1; s <= 4; ++s) pn.mouseDrag (mouseWith (pn, g1 - juce::Point<float> (0, 10.0f * (float) s), g1, true, left));
+        pn.mouseUp (mouseWith (pn, g1 - juce::Point<float> (0, 40), g1, true, left));
+        check (std::abs (a.v[kStage1] - 0.4) < 1e-9 && a.begins == 2 && a.ends == 2 && a.lastGesture == kStage1,
+               tag + "dragging graph 1 up 40 px sets STAGE 1 to +0.4 as one gesture, got " + juce::String (a.v[kStage1]));
+        check (std::abs (a.stageCurve (0, 0.9) - atWave) > 1e-6 && before != atWave, tag + "the drawn curve follows the graph drag");
+        pn.mouseDown (mouseWith (pn, g1, g1, false, shift));
+        pn.mouseDrag (mouseWith (pn, g1 + juce::Point<float> (0, 100), g1, true, shift));
+        pn.mouseUp (mouseWith (pn, g1 + juce::Point<float> (0, 100), g1, true, shift));
+        check (std::abs (a.v[kStage1] - 0.2) < 1e-9, tag + "Shift-drag on the graph is 5x finer (100 px down = -0.2), got " + juce::String (a.v[kStage1]));
+        pn.mouseDoubleClick (mouseWith (pn, g1, g1, false, left));
+        check (a.v[kStage1] == 0.0 && a.begins == a.ends, tag + "double-click on graph 1 resets STAGE 1 to 0, gestures balanced");
+        const auto g3 = pn.stageGraphCentre (2);
+        pn.mouseWheelMove (mouseWith (pn, g3, g3, false, juce::ModifierKeys()), juce::MouseWheelDetails { 0.0f, 1.0f, false, false, false });
+        check (a.v[kStage3] > 0.0 && a.v[kStage2] == 0.5 && a.v[kStage1] == 0.0, tag + "the wheel on graph 3 moves STAGE 3 only");
+
+        // VC SOURCE: click steps forward, Shift-click back (wraps), right-click opens the whole list and changes nothing.
+        const auto s1 = pn.controlCentre (kVc1Src);
+        pn.mouseDown (mouseWith (pn, s1, s1, false, left)); pn.mouseUp (mouseWith (pn, s1, s1, false, left));
+        const bool fwd = a.v[kVc1Src] == 1.0;
+        pn.mouseDown (mouseWith (pn, s1, s1, false, shift)); pn.mouseUp (mouseWith (pn, s1, s1, false, shift));
+        pn.mouseDown (mouseWith (pn, s1, s1, false, shift)); pn.mouseUp (mouseWith (pn, s1, s1, false, shift));
+        check (fwd && a.v[kVc1Src] == 3.0, tag + "VC 1 SOURCE: click JACK -> INPUT, Shift-click back to JACK, then wraps to SIDECHAIN");
+        const int gb = a.begins;
+        pn.mouseDown (mouseWith (pn, s1, s1, false, right)); pn.mouseUp (mouseWith (pn, s1, s1, false, right));
+        check (a.v[kVc1Src] == 3.0 && a.begins == gb, tag + "right-click on VC 1 SOURCE does not step");
+        check (menusShown == 1 && pendingMenu != nullptr, tag + "right-click on VC 1 SOURCE opens the list menu");
+        pendingMenu (2);
+        check (a.v[kVc1Src] == 1.0 && a.begins == gb + 1 && a.ends == a.begins, tag + "picking INPUT from that menu sets VC 1 SOURCE as one gesture");
+        a.v[kVc2Src] = 2.0;
+        juce::StringArray items;
+        int ticked = -1;
+        const auto menu = pn.choiceMenu (kVc2Src);
+        for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
+        {
+            if (it.getItem().isTicked) ticked = it.getItem().itemID;
+            items.add (it.getItem().text);
+        }
+        check (items == juce::StringArray ({ "JACK", "INPUT", "FOLLOW", "SIDECHAIN" }) && ticked == 3, tag + "the list holds every source, the current one (FOLLOW) ticked");
+        const int b0 = a.begins, e0 = a.ends;
+        pn.applyChoice (kVc2Src, 2);
+        check (a.v[kVc2Src] == 1.0 && a.begins == b0 + 1 && a.ends == e0 + 1 && a.lastGesture == kVc2Src, tag + "choosing INPUT sets it as one gesture");
+        pn.applyChoice (kVc2Src, 0);
+        check (a.v[kVc2Src] == 1.0 && a.begins == b0 + 1, tag + "a dismissed menu changes nothing");
+
+        // A menu still open when the panel goes away (editor closed): no crash, no write.
+        const auto s3 = pn.controlCentre (kVc3Src);
+        pn.mouseDown (mouseWith (pn, s3, s3, false, right));
+        const double vc3 = a.v[kVc3Src];
+        const int menusBefore = menusShown;
+        panel.reset();
+        if (pendingMenu != nullptr) pendingMenu (4);     // the menu answers after the panel has gone
+        check (menusBefore == 2 && a.v[kVc3Src] == vc3, tag + "closing the panel with the list open is safe and writes nothing");
+    }
+}
+
+// Text rules: help text (captions, hints, footnotes) never below 9 pt at 100 % on any page or mode, and hovering it
+// shows it in an enlarged tooltip; menus use a plain sans font.
+void testTextRules (const juce::File& outDir)
+{
+    OrigamiProcessor p;
+    std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+    auto* e = dynamic_cast<OrigamiEditor*> (ed.get());
+    if (e == nullptr) { check (false, "editor"); return; }
+    struct Bind : OrigamiPanel::Access
+    {
+        OrigamiProcessor& q;
+        explicit Bind (OrigamiProcessor& x) : q (x) {}
+        double get (int i) const override { return q.value (i); }
+        void set (int i, double v) override { q.setValue (i, v); }
+        float inPeak (int) const override { return 0.0f; }
+        float outPeak (int) const override { return 0.0f; }
+        float follower() const override { return 0.0f; }
+        bool over() const override { return false; }
+        int latencySamples() const override { return 0; }
+        double stageCurve (int s, double x) const override { double v[kParamCount]; for (int i = 0; i < kParamCount; ++i) v[i] = q.value (i); return OrigamiCore::stageCurve (v, s, x); }
+        int presetCount() const override { return (int) factoryPresets().size(); }
+        juce::String presetName (int i) const override { return factoryPresets()[(size_t) i].name; }
+        juce::String presetBank (int i) const override { return factoryPresets()[(size_t) i].bank; }
+        int currentPreset() const override { return q.getCurrentProgram(); }
+    } bind (p);
+    OrigamiPanel open (bind, OrigamiPanel::Mode::RackOpen), closed (bind, OrigamiPanel::Mode::RackClosed);
+    open.setSize (1136, 332);
+    closed.setSize (1136, 87);
+    auto& plug = e->panel();
+    float smallest = 100.0f;
+    juce::String where;
+    for (auto* panel : { &plug, &open })
+        for (auto pg : { Page::Main, Page::Stages, Page::Dynamics, Page::Setup })
+        {
+            panel->setPage (pg);
+            (void) panel->createComponentSnapshot (panel->getLocalBounds(), true, 1.0f);
+            if (panel->smallestTextSize() < smallest)
+            {
+                smallest = panel->smallestTextSize();
+                where = juce::String (panel->mode() == OrigamiPanel::Mode::Plugin ? "plugin " : "rack ") + OrigamiPanel::pageName (pg);
+            }
+            check (panel->labels().size() >= 2, juce::String ("help text recorded on ") + OrigamiPanel::pageName (pg));
+        }
+    (void) closed.createComponentSnapshot (closed.getLocalBounds(), true, 1.0f);
+    smallest = juce::jmin (smallest, closed.smallestTextSize());
+    check (smallest >= OrigamiPanel::kMinTextSize, "no help text below 9 pt at 100 % (smallest " + juce::String (smallest, 1) + " on " + where + ")");
+
+    // Hover: help text shows itself (enlarged by the tooltip look); a knob still shows its value.
+    plug.setPage (Page::Stages);
+    (void) plug.createComponentSnapshot (plug.getLocalBounds(), true, 1.0f);
+    bool caption = false, footnote = false;
+    for (auto& l : plug.labels())
+    {
+        const auto at = plug.toLocal (l.area.getCentre());
+        if (l.text.startsWith ("drag to set STAGE 2")) caption = plug.tooltipAt (at) == l.text;
+        if (l.text.startsWith ("VC source:")) footnote = plug.tooltipAt (at) == l.text;
+    }
+    check (caption && footnote, "hovering a graph caption or the VC source footnote shows it");
+    check (plug.tooltipAt (plug.controlCentre (kSym1)).startsWith ("SYM 1  "), "hovering a knob still shows its value");
+    OrigamiLookAndFeel laf;
+    const auto mf = laf.getPopupMenuFont();
+    check (mf.getTypefaceName() == juce::Font::getDefaultSansSerifFontName() && mf.getHeight() >= 14.0f, "menus use the plain sans font at >= 14 px");
+    check (OrigamiLookAndFeel::kTooltipTextHeight >= 2.0f * OrigamiPanel::kMinTextSize, "tooltips show the hovered text at least twice the smallest panel size");
+    check (&plug.getLookAndFeel() == &e->getLookAndFeel() && dynamic_cast<OrigamiLookAndFeel*> (&e->getLookAndFeel()) != nullptr, "the plugin window uses ORIGAMI's look (menus, tooltips)");
+    if (outDir != juce::File())
+    {
+        p.setValue (kWave, 0.5); p.setValue (kStage1, 0.3); p.setValue (kStage2, -0.2); p.setValue (kStage3, 0.15); p.setValue (kSym2, 0.35); p.setValue (kVc2Src, 2.0);
+        for (auto pg : { Page::Main, Page::Stages, Page::Dynamics, Page::Setup })
+        {
+            plug.setPage (pg);
+            snapshot (plug, outDir.getChildFile (juce::String ("v2_plugin_") + juce::String (OrigamiPanel::pageName (pg)).toLowerCase() + ".png"));
+            open.setPage (pg);
+            snapshot (open, outDir.getChildFile (juce::String ("v2_rack_") + juce::String (OrigamiPanel::pageName (pg)).toLowerCase() + ".png"));
+        }
+        snapshot (closed, outDir.getChildFile ("v2_rack_closed.png"));
+    }
+}
+
 // The preset test signal, 48 kHz stereo, 3.5 s: a log sine sweep 30 Hz -> 16 kHz at -6 dBFS (R at 0.8 of L),
 // then four drum-like hits (a pitch-dropping body plus a noise snap) peaking at -3 dBFS.
 juce::AudioBuffer<float> presetTestSignal()
@@ -545,6 +776,9 @@ int main (int argc, char** argv)
     testState();
     testFactoryPresets();
     testEditor (outDir);
+    testUiLogic();
+    testStagesAndLists();
+    testTextRules (outDir);
     std::printf ("%d checks, %d failed\n%s\n", checks, failures, failures == 0 ? "ORIGAMI PLUGIN TESTS PASS" : "ORIGAMI PLUGIN TESTS FAIL");
     return failures == 0 ? 0 : 1;
 }

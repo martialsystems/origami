@@ -5,6 +5,7 @@
 // ORIGAMI editor: the native panel in plugin mode. 1200 x 360 at 100 %, scaling 75-200 % (900 x 270 to
 // 2400 x 720) with a fixed aspect ratio, from SETUP's UI SCALE buttons or the corner.
 
+#include "OrigamiLookAndFeel.h"
 #include "OrigamiPanel.h"
 #include "OrigamiProcessor.h"
 
@@ -37,6 +38,7 @@ private:
     void loadPreset (int i) override { proc_.setCurrentProgram (i); }
 
     OrigamiProcessor& proc_;
+    OrigamiLookAndFeel laf_;                     // sans menus, enlarged tooltips; outlives the panel and the tooltips
     OrigamiPanel panel_;
-    juce::TooltipWindow tips_ { this, 500 };
+    juce::TooltipWindow tips_ { this, 500 };     // hover 0.5 s
 };
