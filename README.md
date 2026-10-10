@@ -15,6 +15,8 @@ It runs as a VST3 effect, as a standalone app, and as a device in the JIDAI RACK
   
 **Found a bug?** Please [open a GitHub issue](https://github.com/martialsystems/origami/issues/new) and fill in the bug report form.
 
+**Download the Manual** [Here.](https://github.com/martialsystems/origami/blob/main/docs/manual/ORIGAMI_Manual.pdf)
+
 ## Highlights
 
 - **Three folding stages, one macro.** WAVE sweeps stages 1, 2 and 3 in turn, so a single knob goes from clean to deeply folded. STAGE 1–3 push each stage above or below the macro, and SYM (plus SYM 1–3 per stage) tilts the fold for even harmonics.
