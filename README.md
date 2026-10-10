@@ -1,3 +1,5 @@
+Download: [Mac](https://github.com/martialsystems/origami/releases/latest/download/ORIGAMI-macOS.zip), [Windows](https://github.com/martialsystems/origami/releases/latest/download/ORIGAMI-Windows.zip).
+
 # ORIGAMI
 
 **A stereo triple wave folder. Part of the Jidai Collection by Martial Systems.**
