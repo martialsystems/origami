@@ -1,15 +1,19 @@
+
+# ORIGAMI
+
+**A stereo triple wave folder. Part of the Jidai Collection by Martial Systems.**
+
+ORIGAMI folds your sound three times over. Feed it a bass line, a pad or a full mix, turn one WAVE knob, and the signal folds back on itself through three stages in series, from a warm edge to dense, glassy harmonics. Every stage can be shaped on its own and modulated at audio rate, and the whole thing stays level and time-aligned with your dry signal, so you can blend it in like any other insert.
+It runs as a VST3 effect, as a standalone app, and as a device in the JIDAI RACK, where its audio and CV jacks patch into the rest of the rack.
+
 ## Download:
 
 - [Mac](https://github.com/martialsystems/origami/releases/latest/download/ORIGAMI-macOS.zip)
 - [Windows](https://github.com/martialsystems/origami/releases/latest/download/ORIGAMI-Windows.zip)
   
 - [Jidai Collection](https://github.com/martialsystems/jidai-collection)
-
-# ORIGAMI
-
-**A stereo triple wave folder. Part of the Jidai Collection by Martial Systems.**
-
-ORIGAMI folds your sound three times over. Feed it a bass line, a pad or a full mix, turn one WAVE knob, and the signal folds back on itself through three stages in series, from a warm edge to dense, glassy harmonics. Every stage can be shaped on its own and modulated at audio rate, and the whole thing stays level and time-aligned with your dry signal, so you can blend it in like any other insert. It runs as a VST3 effect, as a standalone app, and as a device in the JIDAI RACK, where its audio and CV jacks patch into the rest of the rack.
+  
+**Found a bug?** Please [open a GitHub issue](https://github.com/martialsystems/origami/issues/new) and fill in the bug report form.
 
 ## Highlights
 
