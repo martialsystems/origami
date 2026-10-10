@@ -1,5 +1,7 @@
 Download: [Mac](https://github.com/martialsystems/origami/releases/latest/download/ORIGAMI-macOS.zip), [Windows](https://github.com/martialsystems/origami/releases/latest/download/ORIGAMI-Windows.zip).
 
+ORIGAMI is the insert: a folder on any track. It is also a device in [JIDAI RACK](https://github.com/martialsystems/jidai-collection) when the other instruments patch into it. Rack download: [Mac](https://github.com/martialsystems/jidai-collection/releases/latest/download/JIDAI-RACK-macOS.zip), [Windows](https://github.com/martialsystems/jidai-collection/releases/latest/download/JIDAI-RACK-Windows.zip).
+
 # ORIGAMI
 
 **A stereo triple wave folder. Part of the Jidai Collection by Martial Systems.**
