@@ -1,5 +1,5 @@
 
-# ORIGAMI
+# Origami
 
 **A stereo triple wave folder. Part of the Jidai Collection by Martial Systems.**
 
